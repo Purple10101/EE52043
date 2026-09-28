@@ -1,0 +1,12 @@
+# Normalise line endings: stored as LF in the repo, checked out natively
+* text=auto
+
+# Binary assets (CAD, Unity models/textures, firmware images)
+*.f3d binary
+*.fbx binary
+*.png binary
+*.jpg binary
+*.exr binary
+*.elf binary
+*.bin binary
+*.hex binary
