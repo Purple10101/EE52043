@@ -8,11 +8,28 @@ venv/
 # IDE
 .vscode/
 .idea/
+.vs/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Course files provided by the module (not authored here) - keep locally, don't version
-course_files/*
-!course_files/README.md
+# Unity (regenerated when the project is opened)
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+*.csproj
+*.sln
+*.suo
+*.user
+
+# STM32CubeIDE build output
+course_files/scara/servo_motion_controller/Debug/
+course_files/scara/servo_motion_controller/Release/
+
+# Raw extracted download of the course repo
+Applied_Robotics_Files-main/

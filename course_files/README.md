@@ -1,21 +1,14 @@
 # Course files
 
-Place the contents of `Applied_Robotics_Files` (github.bath.ac.uk/zr202/Applied_Robotics_Files) here.
+Reference material from the module repo `github.bath.ac.uk/zr202/Applied_Robotics_Files`,
+reorganised. The Python hardware APIs themselves live in `../hardware_api/`.
 
-Since that repo lives on the Bath enterprise GitHub instance and isn't accessible from this
-VS Code session's GitHub account, get the files in one of these ways:
-
-1. **Download as zip** — on the repo page, "Code" -> "Download ZIP", then extract the contents
-   into this folder.
-2. **Clone directly**, once you're authenticated to `github.bath.ac.uk` (e.g. via a personal
-   access token from that instance):
-
-   ```
-   git clone https://github.bath.ac.uk/zr202/Applied_Robotics_Files.git course_files_src
-   ```
-
-   then move the files you need in here and delete `course_files_src`.
-
-These files are treated as reference/course material, not code you're authoring, so they're
-excluded from version control by default (see `.gitignore`). If you want them tracked in this
-repo, remove the `course_files/` exclusion in `.gitignore`.
+- `scara/API/python_examples/` - example scripts from the course (`scara_control.py` for the
+  simulator, `scara_robot_test_script.py` for the real robot over serial).
+- `scara/API/cpp/`, `scara/API/matlab/` - the same API in C++ and MATLAB.
+- `scara/CAD/` - robot CAD (Fusion 360 `.f3d` and per-part `.step`).
+- `scara/mini_scara_simulator/` - Unity simulator project (Assets, Packages, ProjectSettings
+  only). Open in Unity Hub; `Library/`, `.sln` and `.csproj` are regenerated on first open.
+- `scara/servo_motion_controller/` - STM32F446RE firmware (STM32CubeIDE project). Build output
+  (`Debug/`) is not kept; rebuild in CubeIDE.
+- `machine_vision/` - ESP32-CAM Arduino sketch and OpenCV Python scripts.
