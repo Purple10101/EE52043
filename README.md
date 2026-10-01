@@ -4,7 +4,10 @@ Project workspace for the EE52043 robot coursework.
 
 ## Layout
 
-- `robot_control/` - your own robot control code.
+- `robot_control/` - our robot control code, one subpackage per module (`world`, `config`,
+  `hardware`, `kinematics`, `gripper`, `motion`, `vision`, `classify`, `planning`, `task`).
+- `docs/architecture.md` - the agreed software architecture. Start here.
+- `docs/plans/` - build-out plans, one per module, written before the code.
 - `hardware_api/` - Python APIs for the SCARA, provided by the course:
   - `scara_motion_controller_api.py` - real robot, over serial (needs `pyserial`).
   - `sim_scara_motion_controller_api.py` - Unity simulator, over TCP (127.0.0.1:9000).
