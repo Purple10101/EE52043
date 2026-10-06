@@ -8,9 +8,11 @@ Project workspace for the EE52043 robot coursework.
   `hardware`, `kinematics`, `gripper`, `motion`, `vision`, `classify`, `planning`, `task`).
 - `docs/architecture.md` - the agreed software architecture. Start here.
 - `docs/plans/` - build-out plans, one per module, written before the code.
-- `scara_control/` - the team's control interface (guide: `docs/hardware-api.md`): `ScaraController` (real robot over serial or
+- `scara_control/` - the team's control interface: `ScaraController` (real robot over serial or
   the simulator over TCP, with workspace limit checks), kinematics in `scara_workspace.py`, and a
-  Tkinter test GUI. From AB3849/Applied-Robotics commit fa7c1a1 (Alex). See its `readme.md`.
+  Tkinter test GUI. From AB3849/Applied-Robotics commit fa7c1a1 (Alex).
+- `docs/hardware-api.md` - how to set up and use `scara_control/`, and what to know before
+  driving the real arm.
 - `hardware_api/` - Python APIs for the SCARA, provided by the course:
   - `scara_motion_controller_api.py` - real robot, over serial (needs `pyserial`).
   - `sim_scara_motion_controller_api.py` - Unity simulator, over TCP (127.0.0.1:9000).
