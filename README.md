@@ -19,6 +19,7 @@ Project workspace for the EE52043 robot coursework.
 - `course_files/` - everything else from the module repo (examples, CAD, simulator, firmware,
   machine vision). See `course_files/README.md`.
 - `tests/` - tests for `robot_control/`.
+- `cad/` - our printed parts (gripper, camera tower). See `cad/README.md`.
 
 ## Setup
 
