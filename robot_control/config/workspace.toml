@@ -1,0 +1,26 @@
+# The rig around the arm: frames, resistor packages and travel settings.
+
+size_tolerance = 0.35     # masks are slightly generous (robot_offline models/synth_only_v1/README.md)
+
+# Joint-space keep-out maps in keep_out/<name>.json, made from the CAD by scripts/keep_out_map.py.
+# No pose may be inside one, and no move may cross one.
+keep_out = ["camera_tower"]
+
+[scene_to_robot]
+# The rig scene frame (mm, origin at the robot base axis, z up: the frame of the arm/rig CAD and of
+# robot_offline's plate mm) to the firmware's robot frame (m, angle 0 along +y, positive toward +x).
+# The arm lies along scene -y at zero, so the robot frame is the scene turned 180 deg: the CAD pose
+# over the plate centre (base -46.12, elbow 110.42) is the firmware IK of robot (0, 0.130).
+# Nominal, from CAD and the sim: check on the arm by pointing at known plate points.
+rotation_deg = 180.0
+translation_m = [0.0, 0.0]
+
+[packages]
+# Body sizes, typical datasheet values: measure the real parts.
+"1/8W" = { length_mm = 3.4, width_mm = 1.8 }
+"1/4W" = { length_mm = 6.3, width_mm = 2.4 }
+"1/2W" = { length_mm = 9.0, width_mm = 3.2 }
+
+[motion]
+hover_z_m = 0.15          # placeholder: which end of the slide range is up is not confirmed on the arm
+move_time_s = 3.0         # docs/hardware-api.md: slow moves, and under about 3 s to avoid reply timeouts

@@ -1,0 +1,15 @@
+# The real arm: geometry and the limits its firmware enforces.
+
+[arm]
+# Measured on the arm STEP (arm_and_rig_scene, 2026-10-31): base axis to elbow axis 124.97 mm,
+# elbow axis to the Z shaft 100.0 mm.
+link1_m = 0.125
+link2_m = 0.100
+
+[limits]
+# servo_controller_scara_init in the firmware. J1 0-120 is the servo's full 2500-500 us pulse range;
+# the links themselves would allow about 141 deg before link 1 and link 2 touch (STEP sweep).
+j0_deg = [-90.0, 90.0]
+j1_deg = [0.0, 120.0]
+j2_deg = [-180.0, 180.0]
+z_m = [0.095, 0.15]       # course example values sent to SCARA_INITIALISE; mapped linearly onto the slide servo
