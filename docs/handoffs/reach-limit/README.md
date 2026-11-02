@@ -1,5 +1,13 @@
 # Handoff: the arm's reach limit over the pick plate
 
+> **Outcome, 2026-11-02: resolved on the arm, without moving the plate.** The elbow link was refitted
+> on its servo's horn with the servo at its clockwise end (`scripts/elbow_servo_hold.py`), so the
+> servo's travel now covers the elbow to its stop (141.1° by the recalibrated potentiometer). Under
+> power the arm reached all of the plate, the middle of the near edge at 137.7°, and all eight bin
+> slots once the trays were turned (`scripts/reach_test.py`). Limits now in `robot_real.toml`: base
+> −90..67.5, elbow 0..139. The firmware is the course's own build again (`firmware/`), not the
+> elbow fix this handoff mentions. The rest of this page is the 2026-10-31 analysis, kept as it was.
+
 From the session of 2026-10-31 (branch `20261031-vision-frontend`, not committed). For the session
 investigating whether, and how, the reach limit can be extended. Everything below names the file it
 came from; "measured" means read from the CAD with the scripts in `scripts/`, "computed" means worked
