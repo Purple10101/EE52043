@@ -28,7 +28,8 @@ Thumbs.db
 *.suo
 *.user
 
-# STM32CubeIDE build output
+# STM32CubeIDE and CMake build output
+firmware/build/
 course_files/scara/servo_motion_controller/Debug/
 course_files/scara/servo_motion_controller/Release/
 
