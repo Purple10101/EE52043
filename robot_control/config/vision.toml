@@ -1,0 +1,5 @@
+# The overhead camera's detector. Camera settings, plate model, work area and tiles come from the
+# robot_offline repo's configs/ (installed with pip install -e), so training and the robot match.
+
+weights = "models/synth_only_v1/best.pt"   # relative paths are in the robot_offline repo
+conf = 0.5                # below about 0.3 the plate's rim shows up as false bodies

@@ -28,7 +28,8 @@ Thumbs.db
 *.suo
 *.user
 
-# STM32CubeIDE build output
+# STM32CubeIDE and CMake build output
+firmware/build/
 course_files/scara/servo_motion_controller/Debug/
 course_files/scara/servo_motion_controller/Release/
 
@@ -39,3 +40,18 @@ Applied_Robotics_Files-main/
 cad/**/sweep_frames/
 *.gcode
 *.bgcode
+
+# Digital twin (kept local, not in the repo): the Unity scene and its generated meshes, the scripts
+# that export, build, start and check it, the Python modules and config that drive it, and its docs
+# (DIGITALTWIN.md: how to run it)
+course_files/scara/mini_scara_simulator/Assets/Twin/
+course_files/scara/mini_scara_simulator/Assets/Twin.meta
+course_files/scara/mini_scara_simulator/Assets/Scenes/twin_scene.unity
+course_files/scara/mini_scara_simulator/Assets/Scenes/twin_scene.unity.meta
+scripts/twin/
+robot_control/hardware/twin.py
+robot_control/task/twin_pick.py
+robot_control/task/twin_live.py
+robot_control/config/bins.toml
+docs/twin.md
+DIGITALTWIN.md

@@ -14,7 +14,7 @@ The overall design is in [../architecture.md](../architecture.md).
 | [04 Gripper interface](04-gripper-interface.md) | 1 | Draft | 01 |
 | [05 Motion](05-motion.md) | 1 | Draft | 01–04 |
 | Supervisor, fake perception, planning | 2 | Not written | stage 1 |
-| Vision: camera, calibration, detection | 3 | Not written | 01 |
+| [06 Vision front end](06-vision-front-end.md) | 3 | Draft, first version built | 01, 03 |
 | Real gripper drivers | 4 | Not written | 04, gripper hardware |
 | Classifier | 5 | Not written | 01, vision |
 

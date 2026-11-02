@@ -1,0 +1,30 @@
+# Drop points on the real rig: the eight slots of its two trays, scene frame mm (workspace.toml
+# [scene_to_robot] takes them to the robot frame). bins.toml (kept out of git with the digital twin)
+# is the CAD layout, which the twin models; the trays on the rig were turned on 2026-11-02, so the real
+# arm uses this file.
+#
+# Measured 2026-11-02 (scripts/reach_test.py teach --bins, logs/reach_points_20261102_183230.json):
+# the tip held at each slot's centre, read from the potentiometers (712/3403, 662/2017). Each tray's
+# four points lie on a row 25 mm apart (the tray's CAD spacing) to within 1-5 mm; the centres here are
+# that fitted row, and long_axis_deg its normal: the slots' long sides (scene, from +x toward +y).
+# Names as on the rig: A1 is the slot furthest from the camera tower, on to B4 beside it.
+#
+# All within robot_real.toml's limits (base 7-61, elbow 85-130). With the camera tower mounted, B3 and
+# B4 are inside its keep-out zone (keep_out/camera_tower.json, from the CAD): the tower is off for now.
+# Heights and slot size are the CAD's (bins.toml), not measured on the rig.
+
+slot_floor_z_mm = -47.0
+slot_rim_z_mm = -40.0
+drop_above_rim_mm = 8.0           # fingertips this far above the rim when the jaws open (or the slide's lowest)
+slot_size_mm = [66.0, 16.0]
+
+bins = [
+    { id = "A1", centre_mm = [-92.1, 34.3], long_axis_deg = -79.6 },     # base 58.9, elbow 129.7
+    { id = "A2", centre_mm = [-116.7, 29.7], long_axis_deg = -79.6 },    # base 56.3, elbow 116.4
+    { id = "A3", centre_mm = [-141.3, 25.2], long_axis_deg = -79.6 },    # base 57.1, elbow 101.6
+    { id = "A4", centre_mm = [-165.9, 20.7], long_axis_deg = -79.6 },    # base 60.5, elbow 84.7
+    { id = "B1", centre_mm = [-129.3, -46.4], long_axis_deg = 10.9 },    # base 25.8, elbow 105.7
+    { id = "B2", centre_mm = [-124.6, -71.0], long_axis_deg = 10.9 },    # base 17.2, elbow 101.7
+    { id = "B3", centre_mm = [-119.8, -95.5], long_axis_deg = 10.9 },    # base 10.9, elbow 94.9
+    { id = "B4", centre_mm = [-115.1, -120.1], long_axis_deg = 10.9, reject = true },   # base 7.0, elbow 85.3
+]

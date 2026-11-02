@@ -1,0 +1,11 @@
+# Parallelogram gripper v3a.1 (Robot Resources/gripper/v3_final, ROBO-CAD gripper/1-parallelogram).
+# Measured on its STEP (2026-10-31).
+
+tool_offset_mm = [0.0, 0.0]   # mounts centred on the Z shaft: socket and closed tips both on its axis
+tip_below_shaft_mm = 64.0     # fingertips below the shaft's bottom face
+symmetric = true
+# Robot-frame direction the jaws close along when the tool angle sent to the firmware is 0.
+# Placeholder: measure on the arm (send tool angle 0, look which way the jaws close).
+jaw_axis_at_zero_deg = 0.0
+# Not modelled yet: the SG90 side (51 mm from the axis) hits the elbow's underside disc when it points
+# toward the elbow, so of yaw and yaw + 180 only the one with the servo away from the elbow is safe.
