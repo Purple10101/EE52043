@@ -71,7 +71,7 @@ def test_symmetric_tool_takes_the_smaller_wrist_turn(kin):
 
 def test_reach(kin):
     r_min, r_max = kin.reach()
-    assert r_min == pytest.approx(0.1146, abs=1e-4)
+    assert r_min == pytest.approx(0.0822, abs=1e-4)     # elbow folded to robot_real.toml's 139 deg
     assert r_max == pytest.approx(0.225)
     assert not kin.ik(0.0, r_min - 0.001, 0.0, 0.12).ok
     assert kin.ik(0.0, r_min + 0.001, 0.0, 0.12).ok

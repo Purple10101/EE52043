@@ -7,9 +7,13 @@ link1_m = 0.125
 link2_m = 0.100
 
 [limits]
-# servo_controller_scara_init in the firmware. J1 0-120 is the servo's full 2500-500 us pulse range;
-# the links themselves would allow about 141 deg before link 1 and link 2 touch (STEP sweep).
-j0_deg = [-90.0, 90.0]
-j1_deg = [0.0, 120.0]
+# Measured on the arm, 2026-11-02, after the elbow was refitted (potentiometers 712/3403, 662/2017):
+# J0: the base servo's travel ends at +69.5 (scripts/base_reach.py, logs/base_reach_20261102_182200.csv),
+# so 67.5; bin A1 (needs 72.5 or more) is out of reach. -90 as in the firmware (servo_controller_scara_init).
+# J1: the elbow stops at 141.1 folded by hand; it reached 137.7 under power (scripts/reach_test.py), so
+# 139: the whole plate bar about its last millimetre at the middle of the near edge.
+# The firmware enforces none of this: SCARA_MOVE_* send any angle.
+j0_deg = [-90.0, 67.5]
+j1_deg = [0.0, 139.0]
 j2_deg = [-180.0, 180.0]
 z_m = [0.095, 0.15]       # course example values sent to SCARA_INITIALISE; mapped linearly onto the slide servo

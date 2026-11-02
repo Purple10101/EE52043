@@ -5,7 +5,7 @@ from robot_control import config
 
 def test_every_file_loads():
     arm = config.ArmSettings.from_config()
-    assert arm.j1 == (0.0, 120.0)
+    assert arm.j1 == (0.0, 139.0)
     config.RigSettings.from_config()
     ws = config.WorkspaceSettings.from_config()
     assert {p.name for p in ws.packages} >= {"1/4W"}

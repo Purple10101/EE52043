@@ -18,6 +18,14 @@ Project workspace for the EE52043 robot coursework.
   - `sim_scara_motion_controller_api.py` - Unity simulator, over TCP (127.0.0.1:9000).
 - `course_files/` - everything else from the module repo (examples, CAD, simulator, firmware,
   machine vision). See `course_files/README.md`.
+- `firmware/` - the motion controller firmware flashed on the arm: the course's Moodle build
+  (`servo_motion_controller.zip`, with the DEMO switch) and this arm's potentiometer calibration in
+  `potentiometers.c`. Set up by `course_files/lab_scripts/RobotSetup.md`. Builds with CMake and the
+  Arm GNU Toolchain (`cmake -S firmware -B firmware/build -G Ninja`, then `cmake --build firmware/build`);
+  flash by copying `firmware/build/servo_motion_controller.bin` to the Nucleo's drive.
+- `scripts/` - bench tools for the real arm: `pot_check.py` and `pot_calibrate.py` (potentiometers,
+  servos off), `go_to.py` (one position), `reach_test.py` and `base_reach.py` (what the arm reaches),
+  `elbow_servo_hold.py` (holds the elbow servo at an end, for refitting its link).
 - `tests/` - tests for `robot_control/` (`python -m pytest`).
 - Our printed parts (gripper, camera tower) aren't in this repo: their CAD, print files and design
   notes are in the sibling `Robot Resources` folder (`gripper/`, `camera_tower/`).
