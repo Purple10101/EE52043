@@ -115,6 +115,7 @@ def main(argv=None):
     src = p.add_mutually_exclusive_group(required=True)
     src.add_argument("frames", nargs="?", help="a saved raw frame, or a folder of them")
     src.add_argument("--live", action="store_true", help="one snapshot from the tower camera")
+    src.add_argument("--twin", action="store_true", help="one snapshot from the simulator's twin of the tower camera")
     p.add_argument("--calibration", help="a saved rectify calibration (.json) to start from, instead of "
                                          "finding the plate from scratch")
     p.add_argument("--conf", type=float, help="confidence threshold (default: vision.toml)")
@@ -122,7 +123,7 @@ def main(argv=None):
     args = p.parse_args(argv)
 
     from robot_offline.pre import rectify
-    from robot_control.vision.camera import LiveCamera, ReplayCamera
+    from robot_control.vision.camera import LiveCamera, ReplayCamera, TwinCamera
     from robot_control.vision.detector import Detector
 
     vision = VisionSettings.from_config()
@@ -134,12 +135,12 @@ def main(argv=None):
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    camera = LiveCamera() if args.live else ReplayCamera(args.frames)
-    frames = [camera.grab()] if args.live else camera.frames()
+    camera = LiveCamera() if args.live else TwinCamera() if args.twin else ReplayCamera(args.frames)
+    frames = [camera.grab()] if args.live or args.twin else camera.frames()
     start = rectify.Calibration.load(args.calibration) if args.calibration else None
     try:
         for snapshot_id, frame in frames:
-            if args.live:
+            if args.live or args.twin:
                 cv2.imwrite(str(out_dir / f"{snapshot_id}.png"), frame)
             t = time.time()
             try:

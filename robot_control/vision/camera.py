@@ -1,4 +1,4 @@
-"""Frame sources: the overhead camera, or saved frames for working without the rig.
+"""Frame sources: the overhead camera, saved frames, or the simulator's twin of the tower camera.
 
 Both give raw 4608 × 2592 BGR frames, as the camera takes them, named for the snapshot id.
 """
@@ -29,6 +29,21 @@ class LiveCamera:
 
     def close(self):
         self._cap.release()
+
+
+class TwinCamera:
+    """The tower camera of the simulator's digital twin (twin_scene, robot_control.hardware.twin)."""
+
+    def __init__(self, host="127.0.0.1", port=None):
+        from robot_control.hardware.twin import DEFAULT_PORT, Twin
+        self._twin = Twin(host, port or DEFAULT_PORT)
+
+    def grab(self):
+        """(id, frame): a frame rendered now."""
+        return "twin-" + time.strftime("%Y%m%d-%H%M%S"), self._twin.grab()
+
+    def close(self):
+        self._twin.close()
 
 
 class ReplayCamera:

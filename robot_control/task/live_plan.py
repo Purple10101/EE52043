@@ -75,13 +75,17 @@ def render(frame, cal, balanced, planned, kin, rig, workspace, top_down=True, gr
 
 
 class Frames:
-    """The camera, or saved frames shown one at a time (n for the next)."""
+    """The camera, saved frames shown one at a time (n for the next), or the simulator's twin camera."""
 
-    def __init__(self, path=None):
+    def __init__(self, path=None, twin=False):
         from robot_offline import config as offline_config
         self.camera_cfg = offline_config.load("camera")
-        self.cap, self.control, self.fixed = None, None, None
-        if path is None:
+        self.cap, self.control, self.fixed, self.twin = None, None, None, None
+        if twin:
+            from robot_control.vision.camera import TwinCamera
+            self.twin = TwinCamera()
+            self.follow = False
+        elif path is None:
             from robot_offline.pre.camera import open_camera
             from robot_offline.pre.exposure import ExposureControl
             print("Opening the camera (a few seconds while exposure and white balance settle)...")
@@ -102,6 +106,8 @@ class Frames:
 
     def read(self, cal):
         """(id, newest frame) or None; meters the exposure on the live camera."""
+        if self.twin is not None:
+            return self.twin.grab()
         if not self.live:
             if self.current is None:            # one frame in memory at a time: they are 36 MB each
                 path = self.paths[self.index]
@@ -118,7 +124,7 @@ class Frames:
         return time.strftime("%Y%m%d-%H%M%S"), frame
 
     def next(self):
-        if not self.live:
+        if not self.live and self.twin is None:
             self.index, self.current = (self.index + 1) % len(self.paths), None
 
     def toggle_exposure(self):
@@ -132,6 +138,8 @@ class Frames:
             self.control = ExposureControl(self.camera_cfg["exposure_control"], *self.fixed, self.cap)
 
     def status(self):
+        if self.twin is not None:
+            return "simulator twin camera"
         if not self.live:
             return f"saved frame {self.index + 1} of {len(self.paths)}: {self.paths[self.index].stem}   (n next)"
         if self.follow:
@@ -141,11 +149,14 @@ class Frames:
     def close(self):
         if self.live:
             self.cap.release()
+        if self.twin is not None:
+            self.twin.close()
 
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="python -m robot_control.task.live_plan", description=__doc__.split("\n\n")[0])
     p.add_argument("--frames", help="saved raw frames (an image or a folder) instead of the camera")
+    p.add_argument("--twin", action="store_true", help="the simulator's twin camera (twin_scene) instead of the camera")
     p.add_argument("--fps", type=float, default=3.0, help="plans per second (3)")
     p.add_argument("--conf", type=float, help="confidence threshold (default: vision.toml)")
     p.add_argument("--out", default="logs/live_plan", help="where s saves")
@@ -162,7 +173,7 @@ def main(argv=None):
     detector = Detector(vision, rig, workspace)
     print(f"Loading {vision.weights} ...")
     detector.model
-    frames = Frames(args.frames)
+    frames = Frames(args.frames, twin=args.twin)
     print(__doc__.split("Keys:", 1)[1].rstrip())
     fitter = Fitter(rectify.Settings.from_config(), interval=REFIND_SECONDS)
     fitter.start()
