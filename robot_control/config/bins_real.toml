@@ -9,8 +9,8 @@
 # that fitted row, and long_axis_deg its normal: the slots' long sides (scene, from +x toward +y).
 # Names as on the rig: A1 is the slot furthest from the camera tower, on to B4 beside it.
 #
-# All within robot_real.toml's limits (base 7-61, elbow 85-130). With the camera tower mounted, B3 and
-# B4 are inside its keep-out zone (keep_out/camera_tower.json, from the CAD): the tower is off for now.
+# All within robot_real.toml's limits (base 7-61, elbow 85-130). With the camera tower mounted, B4 is
+# inside its keep-out zone (keep_out/camera_tower.json, from the CAD, gripper v4): the tower is off for now.
 # Heights and slot size are the CAD's (bins.toml), not measured on the rig.
 
 slot_floor_z_mm = -47.0

@@ -28,6 +28,9 @@ Thumbs.db
 *.suo
 *.user
 
+# OpenCascade environment for the CAD scripts (keep_out_map.py, the twin's export)
+cadenv/
+
 # STM32CubeIDE and CMake build output
 firmware/build/
 course_files/scara/servo_motion_controller/Debug/

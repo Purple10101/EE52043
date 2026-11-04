@@ -1,0 +1,10 @@
+# Slim parallelogram gripper v4, rev 1 (Robot Resources/gripper/v4). Measured on its STEP (2026-11-04).
+# Jaws open 0-12 mm (v3: 25). The SG90 sits behind the linkage on the centreline, reaching 36.3 mm from
+# the axis on the gripper's +y side, square to the jaws.
+
+tool_offset_mm = [0.0, 0.0]   # mounts centred on the Z shaft: socket and closed tips both on its axis
+tip_below_shaft_mm = 64.0     # fingertips below the shaft's bottom face (socket floor z -9, tips z 55)
+symmetric = true
+# Robot-frame direction the jaws close along when the tool angle sent to the firmware is 0.
+# Placeholder: measure on the arm (send tool angle 0, look which way the jaws close).
+jaw_axis_at_zero_deg = 0.0

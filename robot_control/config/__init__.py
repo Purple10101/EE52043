@@ -131,7 +131,7 @@ class GripperSettings:
     jaw_axis_at_zero_deg: float     # robot-frame direction the jaws close along at tool angle 0
 
     @classmethod
-    def from_config(cls, name="parallelogram_v3"):
+    def from_config(cls, name="parallelogram_v4"):
         t = load(name, CONFIG_DIR / "grippers")
         return cls(name, tuple(float(v) / 1000 for v in t["tool_offset_mm"]), float(t["tip_below_shaft_mm"]) / 1000,
                    bool(t["symmetric"]), float(t["jaw_axis_at_zero_deg"]))
