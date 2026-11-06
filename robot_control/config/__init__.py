@@ -3,8 +3,6 @@
 `load("workspace")` returns workspace.toml as nested read-only tables; a missing key raises
 ConfigError naming the file and the key. The `*.from_config()` constructors below read one file
 each and check it, so a bad value fails at startup rather than mid-move.
-
-Plan: docs/plans/01-world-and-config.md
 """
 
 import json

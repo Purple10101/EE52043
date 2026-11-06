@@ -6,13 +6,9 @@ Project workspace for the EE52043 robot coursework.
 
 - `robot_control/` - our robot control code, one subpackage per module (`world`, `config`,
   `hardware`, `kinematics`, `gripper`, `motion`, `vision`, `classify`, `planning`, `task`).
-- `docs/architecture.md` - the agreed software architecture. Start here.
-- `docs/plans/` - build-out plans, one per module, written before the code.
 - `scara_control/` - the team's control interface: `ScaraController` (real robot over serial or
   the simulator over TCP, with workspace limit checks), kinematics in `scara_workspace.py`, and a
   Tkinter test GUI. From AB3849/Applied-Robotics commit fa7c1a1 (Alex).
-- `docs/hardware-api.md` - how to set up and use `scara_control/`, and what to know before
-  driving the real arm.
 - `hardware_api/` - Python APIs for the SCARA, provided by the course:
   - `scara_motion_controller_api.py` - real robot, over serial (needs `pyserial`).
   - `sim_scara_motion_controller_api.py` - Unity simulator, over TCP (127.0.0.1:9000).
@@ -68,8 +64,6 @@ python -m robot_control.task.plan_picks path\to\frame.png               # or a s
 Overlays (top-down view, reach limit in blue, reachable bodies green) and JSON plans go to
 `logs/plan_picks/`.
 
-Design and open points: [docs/plans/06-vision-front-end.md](docs/plans/06-vision-front-end.md).
-
 ## Live plan window
 
 The same front end run a few times a second, in a window like robot_offline's `live_detect`. It
@@ -121,9 +115,20 @@ finds the plate in it again.
 
 Bodies whose pose would put the arm into a no-go zone (below) are skipped with the reason.
 
-The `move_coordinates` values aren't ready to send yet: the slide height (`hover_z_m`) and the jaw
-direction at tool angle 0 are placeholders, and the scene-to-robot transform still has to be checked
-on the arm (see the plan's open points).
+The `move_coordinates` values are for reading only: nothing here drives the arm, and the slide height
+and jaw direction behind them are placeholders. `resistor_nav.py` (below) is what drives it.
+
+## Before driving the real arm
+
+- **Keep a hand on the servo supply.** Nothing in software can stop a move already sent; only cutting
+  servo power can.
+- **Servos snap.** The board keeps sending a servo's last position even with servo power off, so turning
+  servo power on sends every servo there at full speed. If servo power has been off while the board was
+  running, keep it off, press the Nucleo's black reset button, then turn it on, and `start` again.
+- **Nothing else guards the arm.** The firmware doesn't check ranges or clamp a servo, so an out-of-range
+  command drives it past its limits. The limits are in `robot_real.toml` and `scripts/slide_wrist.py`.
+- **One program at a time** can hold the COM port. If replies go out of step after a failure, reset the
+  Nucleo with servo power off and reconnect.
 
 ## Resistor navigation window
 
@@ -180,6 +185,14 @@ inside the tower's keep-out. Every move is logged to `logs/slide_wrist_<date>.cs
 
 Bins use the angles taught at each slot on 2026-11-02 (`robot_control/config/bins_real.toml`), before
 the current gripper and firmware, so they may be a little off.
+
+## The full loop (not built yet)
+
+The agreed work cycle, for the top-level program that will run it: park out of the camera's view, take
+a fresh snapshot, detect the bodies and map them to the robot frame, check whether the last pick worked,
+classify each one, rank them, take the first with a clear reachable grasp, pick it, place it in its bin,
+and repeat until the plate is empty. Re-scanning after every pick means a disturbed resistor needs no
+special handling, and a failed grasp shows up as a body still at the last target.
 
 ## No-go zones (the camera tower)
 

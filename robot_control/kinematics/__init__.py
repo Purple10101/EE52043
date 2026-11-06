@@ -1,6 +1,4 @@
 """IK/FK mirror of the firmware, joint limits, reach and wrist choice. Pure maths, no I/O.
-
-Plan: docs/plans/03-kinematics.md
 """
 
 from robot_control.kinematics.arm import IKResult, Kinematics
