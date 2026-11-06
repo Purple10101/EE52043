@@ -21,6 +21,8 @@ Project workspace for the EE52043 robot coursework.
   Set up by `course_files/lab_scripts/RobotSetup.md`. Builds with CMake and the
   Arm GNU Toolchain (`cmake -S firmware -B firmware/build -G Ninja`, then `cmake --build firmware/build`);
   flash by copying `firmware/build/servo_motion_controller.bin` to the Nucleo's drive.
+- `gripper_firmware/` - the gripper's ESP32-S3 sketch: limits, ramps and calibration for its SG90. Build with
+  the Arduino IDE (board XIAO_ESP32S3, signal on D7).
 - `scripts/` - bench tools for the real arm: `pot_check.py` and `pot_calibrate.py` (potentiometers,
   servos off), `go_to.py` (one position), `reach_test.py` and `base_reach.py` (what the arm reaches),
   `elbow_servo_hold.py` (holds the elbow servo at an end, for refitting its link), `slide_wrist.py`
