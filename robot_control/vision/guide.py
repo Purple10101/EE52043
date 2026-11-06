@@ -94,6 +94,17 @@ def plan_jaws(tip_mm, body_deg, wrist_range, kinematics, rig, start_wrist=WRIST_
     return min(found, key=lambda f: abs(f[2] - start_wrist))
 
 
+def wrist_across(base, elbow, body_deg, wrist_range, start_wrist=WRIST_REF_DEG):
+    """The wrist angle (deg) that closes the jaws across a body lying along body_deg, with the arm at
+    (base, elbow): of those in wrist_range, the nearest start_wrist. Raises ValueError if there is none."""
+    wrist = start_wrist + ((jaw_angle(base, elbow, start_wrist) - body_deg - 90.0 + 90.0) % 180.0 - 90.0) / WRIST_SCALE
+    found = [wrist + k * 180.0 / WRIST_SCALE for k in (-1, 0, 1)]
+    found = [w for w in found if wrist_range[0] <= w <= wrist_range[1]]
+    if not found:
+        raise ValueError(f"no wrist angle in {wrist_range[0]:g}..{wrist_range[1]:g} lines the jaws up")
+    return min(found, key=lambda w: abs(w - start_wrist))
+
+
 def axis_mm(tip_mm, base, elbow, wrist):
     """The wrist's axis (scene mm), from the tip seen at scene mm tip_mm at this pose."""
     return np.asarray(tip_mm, float) - tip_offset_mm(base, elbow, wrist)

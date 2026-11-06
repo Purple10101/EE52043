@@ -58,7 +58,7 @@ AXES = {"base": 0, "elbow": 1, "wrist": 2, "slide": 3}
 # as z_max maps to -60; the tip is about 25 mm above the plate at -10, about 0.3 mm a degree.
 SAFE = {"wrist": (-90.0, 120.0), "slide": (-50.0, 63.0)}
 MAX_STEP = {"wrist": 180.0, "slide": 30.0}    # after the first move the firmware ramps them
-ELBOW_MAX = 132.0           # the stop is 141; it reached 137.7 on 2026-11-02. SCARA_AUTO_CALIBRATE only measures it to 120
+ELBOW_MAX = 136.0           # the stop is 141; it reached 137.7 on 2026-11-02. SCARA_AUTO_CALIBRATE only measures it to 120
 GLIDE_SLIDE = 45.0          # about 9 mm above the plate: a move may cross it this low, clear of a body 2.4 mm tall
 HOVER_SLIDE = 20.0          # the tip about 16 mm above the plate (camera and eye, 2026-11-05): travel height
 OVER_PLATE_SLIDE = 63.0     # the bottom level: the tip almost on the plate, set by eye (2026-11-05). Reach it going down

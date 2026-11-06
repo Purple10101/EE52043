@@ -110,7 +110,7 @@ def test_a_glide_may_cross_the_plate_at_its_own_height_but_no_lower():
 
 
 def test_a_swing_keeps_to_the_limits_and_clear_of_the_tower():
-    assert "elbow" in swing(-50.0, 135.0, 90.0, PARKED, HOVER_SLIDE)
+    assert "elbow" in swing(-50.0, 137.0, 90.0, PARKED, HOVER_SLIDE)
     assert "base" in swing(69.0, 110.0, 90.0, PARKED, HOVER_SLIDE)
     assert "wrist" in swing(-50.0, 97.0, 130.0, PARKED, HOVER_SLIDE)
     assert "keep-out" in swing(40.0, 60.0, 0.0, (0.0, 60.0), HOVER_SLIDE)
@@ -139,7 +139,7 @@ def test_later_moves_are_small_and_inside_the_safe_range():
 
 def test_arm_moves_stay_in_range_and_clear_of_the_tower():
     assert arm_refusal("base", -45.0, 0.0, 110.0, ARM, ZONES) is None
-    assert "range" in arm_refusal("elbow", 135.0, -45.0, 110.0, ARM, ZONES)
+    assert "range" in arm_refusal("elbow", 137.0, -45.0, 110.0, ARM, ZONES)
     assert "range" in arm_refusal("base", 69.0, 0.0, 110.0, ARM, ZONES)
     assert "keep-out" in arm_refusal("base", 40.0, 0.0, 60.0, ARM, ZONES)
 

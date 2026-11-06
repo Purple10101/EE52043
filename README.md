@@ -30,7 +30,7 @@ Project workspace for the EE52043 robot coursework.
   `elbow_servo_hold.py` (holds the elbow servo at an end, for refitting its link), `slide_wrist.py`
   (start, park and bounded single moves), `tip_view.py` (the tip as the camera finds it),
   `camera_calibrate.py` (fits the arm to the camera), `camera_guide.py` (steers the tip with the camera),
-  `resistor_nav.py` (click a resistor and the arm goes to it).
+  `resistor_nav.py` (click a resistor or a bin and the arm goes to it).
 - `tests/` - tests for `robot_control/` (`python -m pytest`).
 - Our printed parts (gripper, camera tower) aren't in this repo: their CAD, print files and design
   notes are in the sibling `Robot Resources` folder (`gripper/`, `camera_tower/`).
@@ -124,6 +124,62 @@ Bodies whose pose would put the arm into a no-go zone (below) are skipped with t
 The `move_coordinates` values aren't ready to send yet: the slide height (`hover_z_m`) and the jaw
 direction at tool angle 0 are placeholders, and the scene-to-robot transform still has to be checked
 on the arm (see the plan's open points).
+
+## Resistor navigation window
+
+Click a resistor or a bin and the arm goes there. **This drives the real arm:** keep a hand on the
+servo supply's plug, as unplugging it is the emergency stop. The jaws can't open yet, so the arm stops
+above the resistor and picks nothing up.
+
+**To run it,** open a terminal in the `EE52043` folder and enter:
+
+```
+.venv\Scripts\python scripts\resistor_nav.py
+```
+
+That's all you need unless the Nucleo has lost power (see below). Nothing else may be using the camera.
+
+It takes about 20 seconds to load, then finds the plate from the live camera, showing the plain camera
+image until it has. If the arm is over the plate, press PARK so the camera can see it. The fit is held
+once found, so check that the red outline sits on the plate's edges. If it doesn't, or the plate is
+never found, park and press `c` to find it again from scratch. Keep hands off the plate while it looks.
+
+**If the Nucleo has lost power since the arm last ran,** start the arm before opening the window. The
+firmware keeps its calibration only in memory and still accepts moves without it, and the scripts can't
+tell. An uncalibrated arm lands many degrees off. Run these with the plate clear and the gripper clear
+of the tower:
+
+```
+.venv\Scripts\python scripts\slide_wrist.py start             # base and elbow jump to zero, then sweep end to end
+.venv\Scripts\python scripts\slide_wrist.py move elbow 110    # at once: the sweep ends inside the tower's keep-out
+.venv\Scripts\python scripts\slide_wrist.py park
+.venv\Scripts\python scripts\slide_wrist.py move wrist 0
+```
+
+After a power-off the slide and wrist are limp, so raise the slide by hand before `start`. Their first
+moves snap them to 0 at full speed. To redo `start` with the Nucleo still running, lift the slide first
+with `move slide 20`, then `move slide 0`.
+
+**Controls:**
+
+| Control | Action |
+|---|---|
+| Click a resistor | Choose it. Resistors are only detected while the arm is parked, so PARK to see the plate as it is now. |
+| PLAY or `p` | One smooth move: the jaws' centre over the chosen resistor, about 9 mm up, jaws across it. |
+| PARK or `k` | Back out of the camera's way. |
+| A1-A4, B1-B4 | Over that bin, round the tower if needed, with the jaws turned so what they hold lies along the slot, then the gripper lowers. It stays up if the arm missed by more than 2 degrees. Every move away from a bin lifts the gripper first. |
+| `[` / `]` | Turn the wrist 2 degrees, once the arm has left park. |
+| `m` | Record that the jaws lie along the chosen yellow line, to `logs/jaw_marks.csv`. |
+| `c` | Find the plate again from scratch. PARK first, so the arm isn't in the way. |
+| `q` / `Esc` | Quit. The arm stays where it is, so PARK first if you're finishing. |
+
+The yellow line across each resistor is the line the jaws close along. The status line at the top shows
+how far the joints landed from their targets: more than about 1 degree means something is wrong. A
+target past the arm's limits gives "CAN'T REACH" and nothing moves. B4 does this today, as its centre is
+inside the tower's keep-out. Every move is logged to `logs/slide_wrist_<date>.csv`.
+
+Bins use the angles taught at each slot on 2026-11-02 (`robot_control/config/bins_real.toml`), before
+the current gripper and firmware, so they may be a little off.
 
 ## No-go zones (the camera tower)
 
