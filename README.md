@@ -19,13 +19,18 @@ Project workspace for the EE52043 robot coursework.
 - `course_files/` - everything else from the module repo (examples, CAD, simulator, firmware,
   machine vision). See `course_files/README.md`.
 - `firmware/` - the motion controller firmware flashed on the arm: the course's Moodle build
-  (`servo_motion_controller.zip`, with the DEMO switch) and this arm's potentiometer calibration in
-  `potentiometers.c`. Set up by `course_files/lab_scripts/RobotSetup.md`. Builds with CMake and the
+  (`servo_motion_controller.zip`, with the DEMO switch), this arm's potentiometer calibration in
+  `potentiometers.c`, and finer control with the same serial protocol: 0.1 us PWM ticks, potentiometers
+  averaged over a PWM period, and proportional settling (`settle.c`, tested on a PC by `test/settle_test.c`).
+  Set up by `course_files/lab_scripts/RobotSetup.md`. Builds with CMake and the
   Arm GNU Toolchain (`cmake -S firmware -B firmware/build -G Ninja`, then `cmake --build firmware/build`);
   flash by copying `firmware/build/servo_motion_controller.bin` to the Nucleo's drive.
 - `scripts/` - bench tools for the real arm: `pot_check.py` and `pot_calibrate.py` (potentiometers,
   servos off), `go_to.py` (one position), `reach_test.py` and `base_reach.py` (what the arm reaches),
-  `elbow_servo_hold.py` (holds the elbow servo at an end, for refitting its link).
+  `elbow_servo_hold.py` (holds the elbow servo at an end, for refitting its link), `slide_wrist.py`
+  (start, park and bounded single moves), `tip_view.py` (the tip as the camera finds it),
+  `camera_calibrate.py` (fits the arm to the camera), `camera_guide.py` (steers the tip with the camera),
+  `resistor_nav.py` (click a resistor and the arm goes to it).
 - `tests/` - tests for `robot_control/` (`python -m pytest`).
 - Our printed parts (gripper, camera tower) aren't in this repo: their CAD, print files and design
   notes are in the sibling `Robot Resources` folder (`gripper/`, `camera_tower/`).

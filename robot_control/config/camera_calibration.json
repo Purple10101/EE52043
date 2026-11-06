@@ -1,0 +1,14 @@
+{
+  "rotation_deg": -177.31239033344826,
+  "translation_m": [
+    0.0014318031437530864,
+    -0.0007010255554304179
+  ],
+  "base_scale": 1.0464616288685489,
+  "elbow_offset_deg": -0.45708158978523894,
+  "date": "2026-11-06",
+  "pairs": "camera_calibration_20261106_012205.csv",
+  "rms_mm": 1.26,
+  "worst_mm": 2.12,
+  "left_out_rms_mm": 1.54
+}
