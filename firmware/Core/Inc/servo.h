@@ -13,6 +13,9 @@
 
 #include "stm32f4xx_hal.h"
 
+// TIM3 counts at 90 MHz / 9: 0.1 us a tick, 30000 ticks a period (333 Hz)
+#define PWM_TICKS_PER_US 10.0f
+
 typedef struct {
 	float min_pulse_width;
 	float max_pulse_width;

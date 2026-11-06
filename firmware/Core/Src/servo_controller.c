@@ -6,6 +6,7 @@
  */
 
 #include "servo_controller.h"
+#include "settle.h"
 #include "potentiometers.h"
 
 // function prototypes
@@ -339,6 +340,33 @@ void servo_controller_scara_auto_calibrate_axis(servo_controller_scara_t *_servo
 	axis->cpos = pot_angle;
 }
 
+// Brings joints onto their targets from their potentiometers: see settle.h. The base and elbow only,
+// whose pulses are inverted: a smaller pulse is a bigger angle.
+static void settle_axes(servo_t **_axes, int *_channels, float *_targets, int _count, float _seconds)
+{
+	float trim[2] = {0.0, 0.0};
+	int calm = 0;
+	int ticks = (int)(_seconds * 1000.0 / SETTLE_TICK_MS);
+
+	for (int i = 0; i < ticks && calm < SETTLE_CALM_TICKS; i++)
+	{
+		int all_in_band = 1;
+		for (int j = 0; j < _count; j++)
+		{
+			float error = _targets[j] - potentiometers_read_angle(_channels[j]);
+			if (fabsf(error) > SETTLE_BAND_DEG)
+			{
+				all_in_band = 0;
+			}
+			float step = settle_step(error, trim[j]);
+			trim[j] += step;
+			servo_set_pulse_width_us(_axes[j], servo_get_pulse_width_us(_axes[j]) - step);
+		}
+		calm = all_in_band ? calm + 1 : 0;
+		HAL_Delay(SETTLE_TICK_MS);
+	}
+}
+
 void move_j_scara(servo_controller_scara_t *_servo_controller_scara, int _axis, float _angle, float _T)
 {
     // assign axis
@@ -486,33 +514,14 @@ void move_j_scara(servo_controller_scara_t *_servo_controller_scara, int _axis, 
 	{
 		angle_before_settling = potentiometers_read_angle(_axis);
 	}
-    float pulse_width_correction = 0.0;
 
 	// settling time (seconds) to reduce backlash
-	int settling_samples = (int)(_servo_controller_scara->settling_time * 1000.0 / SAMPLING_TIME_SETTLING);
-
-	for (int i = 0; i < settling_samples; i++)
+	if (_axis == 0 || _axis == 1)
 	{
-	    // ----- control loop -----
-	    if (_axis == 0 || _axis == 1)
-	    {
-	        float pot_read = potentiometers_read_angle(_axis);
-
-	        if (tpos - pot_read < -0.5) {
-	        	pulse_width_correction = 5;
-	        } else if (tpos - pot_read > 0.5) {
-	        	pulse_width_correction = -5;
-	        } else {
-	        	pulse_width_correction = 0;
-	        }
-
-	        float current_pulse_width = servo_get_pulse_width_us(axis);
-	        float adjusted_pulse_width = current_pulse_width + pulse_width_correction;
-
-	        servo_set_pulse_width_us(axis, adjusted_pulse_width);
-	    }
-
-	    HAL_Delay(SAMPLING_TIME_SETTLING);
+		servo_t *settling[1] = {axis};
+		int channels[1] = {_axis};
+		float targets[1] = {tpos};
+		settle_axes(settling, channels, targets, 1, _servo_controller_scara->settling_time);
 	}
 
 	// set last angle adjustment from settling
@@ -557,11 +566,11 @@ void move_js_scara(servo_controller_scara_t *_servo_controller_scara,
 				cpos_adjustment = axis[i]->last_angle_adjustment * 0.5;
 			}
 
-			if (tpos[AXES] - cpos[i] > cpos_adjustment)
+			if (tpos[i] - cpos[i] > cpos_adjustment)
 			{
 				cpos[i] += cpos_adjustment;
 			}
-			else if (tpos[AXES] - cpos[i] < cpos_adjustment)
+			else if (tpos[i] - cpos[i] < cpos_adjustment)
 			{
 				cpos[i] -= cpos_adjustment;
 			}
@@ -654,38 +663,12 @@ void move_js_scara(servo_controller_scara_t *_servo_controller_scara,
 	angle_before_settling[0] = potentiometers_read_angle(0);
 	angle_before_settling[1] = potentiometers_read_angle(1);
 
-	float pulse_width_correction[2] = {0.0, 0.0};
-
 	// settling time (seconds) to reduce backlash
-	int settling_samples = (int)(_servo_controller_scara->settling_time * 1000.0 / SAMPLING_TIME_SETTLING);
-
-	for (int i = 0; i < settling_samples; i++)
 	{
-		// apply to only axis 0 and 1 ...
-		for (int j = 0; j < 2; j++)
-		{
-			float pot_read = potentiometers_read_angle(j);
-
-			if (tpos[j] - pot_read < -0.5)
-			{
-				pulse_width_correction[j] = 5; // minimum pulse width as deadband = 4ms
-			}
-			else if (tpos[j] - pot_read > 0.5)
-			{
-				pulse_width_correction[j] = -5;
-			}
-			else
-			{
-				pulse_width_correction[j] = 0;
-			}
-
-			float current_pulse_width = servo_get_pulse_width_us(axis[j]);
-			float adjusted_pulse_width = current_pulse_width + pulse_width_correction[j];
-
-			servo_set_pulse_width_us(axis[j], adjusted_pulse_width);
-		}
-
-		HAL_Delay(SAMPLING_TIME_SETTLING);
+		servo_t *settling[2] = {axis[0], axis[1]};
+		int channels[2] = {0, 1};
+		float targets[2] = {tpos[0], tpos[1]};
+		settle_axes(settling, channels, targets, 2, _servo_controller_scara->settling_time);
 	}
 
 	// set last angle adjustment from settling

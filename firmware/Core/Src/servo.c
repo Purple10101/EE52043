@@ -60,13 +60,13 @@ void servo_init(servo_t *_servo, float _min_pulse_width, float _max_pulse_width,
 float servo_get_pulse_width_us(servo_t *_servo)
 {
     uint16_t pulse_width = __HAL_TIM_GET_COMPARE(_servo->pwm_timer, _servo->pwm_timer_channel);
-    float pulse_width_us = ((float)pulse_width * 27.0) / 9.0;
+    float pulse_width_us = (float)pulse_width / PWM_TICKS_PER_US;
     return pulse_width_us;
 }
 
 void servo_set_pulse_width_us(servo_t *_servo, float _pulse_width_us)
 {
-	uint16_t pulse_width = (uint16_t)((_pulse_width_us * 9.0) / 27.0);
+	uint16_t pulse_width = (uint16_t)(_pulse_width_us * PWM_TICKS_PER_US + 0.5f);
 	__HAL_TIM_SET_COMPARE(_servo->pwm_timer, _servo->pwm_timer_channel, pulse_width);
 }
 
@@ -121,10 +121,7 @@ void servo_set_angle(servo_t *_servo, float _angle)
 		pulse_width_us = _servo->calib_zero_pulse_width;
 	}
 
-	// Convert pulse width (us) to timer counts for 333Hz PWM
-	// timer counts = (pulse width in s x 90000000) / (270 * 1000000)
-	uint16_t pulse_width = (uint16_t)((pulse_width_us * 9) / 27);
-	__HAL_TIM_SET_COMPARE(_servo->pwm_timer, _servo->pwm_timer_channel, pulse_width);
+	servo_set_pulse_width_us(_servo, pulse_width_us);
 }
 
 
