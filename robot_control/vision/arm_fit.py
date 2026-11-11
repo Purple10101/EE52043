@@ -111,6 +111,17 @@ def fit_rigid(scene_mm, joints, kinematics):
     return ArmFit(rig, JointCorrection(), errors_mm(scene_mm, joints, kinematics, rig))
 
 
+def fit_shift(scene_mm, joints, kinematics, rig, correction):
+    """The saved calibration with only its translation moved, by the mean error: what carrying the rig
+    does (the arm's base shifts against the plate and camera, which travel together on the tower). The
+    rotation and the joint corrections are kept, so a few pairs are enough. An ArmFit, its errors after."""
+    if len(scene_mm) < 1:
+        raise ValueError("a shift needs at least 1 pair")
+    mean = errors_mm(scene_mm, joints, kinematics, rig, correction).mean(axis=0)
+    moved = RigSettings(rig.rotation_deg, tuple(float(t - m / 1000.0) for t, m in zip(rig.translation_m, mean)))
+    return ArmFit(moved, correction, errors_mm(scene_mm, joints, kinematics, moved, correction))
+
+
 def fit_joints(scene_mm, joints, kinematics):
     """Rotation, translation, the base's scale and the elbow's offset, together."""
     if len(scene_mm) < 3:

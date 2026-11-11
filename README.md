@@ -2,6 +2,79 @@
 
 Project workspace for the EE52043 robot coursework.
 
+## Running the sorter
+
+One window sorts the resistors on the plate into the trays, from power-on to an empty plate. Run every
+command from the `EE52043` folder.
+
+1. **Plug in** the camera, the gripper board and the Nucleo (USB), then the servo supply (5 V). Keep a
+   hand on the servo supply's plug whenever the arm moves: unplugging it is the emergency stop.
+2. **Open the window:**
+
+   ```
+   .venv\Scripts\python scripts\sort_resistors.py
+   ```
+
+   It takes about 20 seconds to load the models and open the camera. Nothing else may be using the camera.
+3. **After any power-off of the Nucleo, calibrate the arm.** The window shows when the arm was last
+   started; the program can't tell if the power has been off since, so if in doubt, calibrate. Press
+   **CALIBRATE ARM** once and it lists what to do by hand first: with the servo supply off, slide fully
+   up, elbow folded to 100 degrees or more, gripper turned away from the camera tower, plate clear. Then
+   switch the supply on and press **CALIBRATE ARM** again within 20 s. It ends with an elbow check: "good"
+   carries on; "BAD" means something dragged on the arm, so free the cables and calibrate again.
+4. **Check the aim, at the start of every session and whenever the rig has moved.** With the plate clear,
+   press **CHECK AIM**. The arm puts its closed tip down at five points and the camera measures where it
+   really went. A steady shift (carrying the rig shifts the arm against the plate) is taken out of the
+   calibration and saved. The status line then says how far off it was and how far off it is now. If it says
+   to redo the full calibration, follow "Calibrating the system" below. Why this matters:
+   `experiments/2026-11-11_pick_error_pipeline/` (on this PC), where a 2.8 mm shift made a pick miss.
+5. **Lay the resistors on the plate**, keeping the crosshair in the middle clear, and press **LOOK**. Each
+   resistor is outlined: green is the next pick, orange is picked later, grey stays on the plate (the label
+   says why: unsure of its value, outside 10 ohm to 10 kohm, ...). Nothing moves.
+6. **Press START.** The arm picks, drops and parks, looking at the plate again after every pick. The
+   **TRAYS** list shows which value each bin holds and how many have gone in, and **WHERE THE BINS ARE**
+   shows the rig from above with each slot labelled and the arm moving as it does. Each value keeps its
+   bin until the window is closed, even across STOP and START.
+7. **STOP** ends the run once the arm is parked again. The run ends by itself when nothing is left that
+   it can sort. Press **q** to close the window once nothing is running.
+
+Every session (window opened) is logged in `logs/sort_runs/<time>/`:
+- `events.csv`: what happened;
+- `readings.csv`: every look's reading of every resistor (value, best guess, confidence, colours), the detections
+  too faint to count, and the ones missing;
+- `crops/`: the band crops the reader saw;
+- `frames/`: each look's averaged camera frame and plate fit;
+- a picture of the window per look.
+
+When a resistor is misread or missed, that folder is the evidence to send to robot_offline's band-reading or
+segmentation session. `experiments/2026-11-11_full_run_8/` (on this PC) is the first run's investigation.
+
+**A value is trusted at 0.9 confidence or more** (`robot_control/config/vision.toml`, `min_confidence`); under it the
+resistor stays on the plate as "unsure". On 2026-11-11, at 0.7, a 4k7 read as 470R would have been sorted wrong.
+
+**Each resistor is followed from look to look.** Its reading is averaged over its last few looks and its
+close-up, so one bad look can't flip it. A resistor seen before but missing from a look gets a dashed
+"missed?" ring, and the run looks again rather than end. A pick the jaws missed is picked again.
+
+**Without the arm:** `.venv\Scripts\python scripts\sort_resistors.py --look-only` opens the camera alone
+(LOOK only), to check what it sees.
+
+**If something is wrong:**
+
+- *The plate isn't found:* clear the crosshair. In the lab a pale bench behind the far edge can hide it; a
+  matte black strip along that edge helps. See "Calibrating the system" below.
+- *A pick misses, or "3 picks in a row came to nothing":* the arm isn't going where the camera says. Press
+  CHECK AIM. If it says more than a shift is wrong, do the full calibration ("Calibrating the system").
+- *A pick is counted as sorted but wasn't:* the run judges a pick only by the resistor's spot being empty
+  at the next look (the gripper can't feel what it holds). Don't touch the plate during a run.
+- *Stopped holding a resistor it couldn't drop:* the arm is left where it is, the jaws still gripping.
+  Close the window, open the jaws with OPEN in `.venv\Scripts\python scripts\resistor_nav.py`, take the
+  resistor out, then PARK there.
+- *No rig picture under the trays:* it is made from the digital twin, which stays on this PC:
+  `.venv\Scripts\python scripts\twin\render_top_view.py`. Without it the slots are drawn on a plain background.
+
+The details of each part are under "The sorting run" below.
+
 ## Layout
 
 - `robot_control/` - our robot control code, one subpackage per module (`world`, `config`,
@@ -28,10 +101,14 @@ Project workspace for the EE52043 robot coursework.
   `elbow_servo_hold.py` (holds the elbow servo at an end, for refitting its link), `slide_wrist.py`
   (start, park and bounded single moves), `tip_view.py` (the tip as the camera finds it),
   `camera_calibrate.py` (fits the arm to the camera), `camera_guide.py` (steers the tip with the camera),
-  `resistor_nav.py` (click a resistor or a bin and the arm goes to it).
+  `resistor_nav.py` (click a resistor or a bin and the arm goes to it), `sort_resistors.py` (the sorting
+  run: sorts the plate on its own).
 - `tests/` - tests for `robot_control/` (`python -m pytest`).
+- `experiments/` - investigations, kept on this machine and out of git (as in robot_offline): one folder
+  each, `YYYY-MM-DD_topic/`, with a `README.md` (goal, outcome, evidence) and the scripts that reproduce it.
+  `2026-11-11_pick_error_pipeline/` traces a missed pick through the camera-to-joints pipeline.
 - Our printed parts (gripper, camera tower) aren't in this repo: their CAD, print files and design
-  notes are in the sibling `Robot Resources` folder (`gripper/`, `camera_tower/`).
+  notes are in the sibling `Robot Resources` folder (`gripper/`, `camera_tower/`, `non-res-bin/`).
 
 ## Setup
 
@@ -135,6 +212,10 @@ and jaw direction behind them are placeholders. `resistor_nav.py` (below) is wha
 
 ## Calibrating the system
 
+The sorting window's **CHECK AIM** covers the usual case, a steady shift after the rig has been carried,
+in a minute or two. Do the full procedure below when it says more than a shift is wrong, after the gripper
+or the camera has been changed, or the first time on a new rig.
+
 Do this whenever the rig has been moved (a new bench, carried home or to the lab), the Nucleo has lost
 power, or picks miss by more than about 2 mm. It takes about 15 minutes. It checks three things in turn,
 each needing the one before: the joints, the plate as the camera sees it, then the arm against the plate.
@@ -145,8 +226,9 @@ the check passes, 20 if it has to recalibrate:
 
 1. Set out the rig: plate and arm where they will stay, cables slack, plate clear (the crosshair
    especially). Plug in the camera, the gripper board and the Nucleo, but not the servo supply yet.
-2. With the servos limp: raise the slide by hand, fold the elbow to 100 degrees or more, turn the gripper
-   away from the camera tower.
+2. With the servos limp: raise the slide fully by hand, fold the elbow to 100 degrees or more, turn the
+   gripper away from the camera tower. Folded, the gripper passes over the non-resistor bin in `start`'s base
+   sweep, and the bin's back wall stands above the plate.
 3. Plug in the servo supply (set to 5 V), then run the start sequence under "Resistor navigation window"
    (`start`, `move elbow 110` at once, `park`, `move wrist 0`).
 4. Steps 1 to 4 below: the elbow check, `plate`, the tip view, `check`.
@@ -271,9 +353,17 @@ of the tower:
 .venv\Scripts\python scripts\slide_wrist.py move wrist 0
 ```
 
-After a power-off the slide and wrist are limp, so raise the slide by hand before `start`. Their first
-moves snap them to 0 at full speed. To redo `start` with the Nucleo still running, lift the slide first
-with `move slide 20`, then `move slide 0`.
+After a power-off the slide and wrist are limp, so raise the slide fully by hand before `start`. Their
+first moves snap them to 0 at full speed. To redo `start` with the Nucleo still running, bring the slide
+to 0 first so its snap is nothing. From the park that means out over the plate first, as the slide may
+only go up over the non-resistor bin: `move base -45`, `move slide -20`, `move slide 0`.
+
+**The park and the non-resistor bin.** The bin for parts pushed off the plate stands along the plate's +X edge,
+under the park pose, and its back wall rises 6 mm above the plate (CAD: `Robot Resources/non-res-bin`).
+So the arm parks with the slide fully up (`PARK_SLIDE`, -50), and `park` raises it before anything else
+moves. With the wrist out past that edge the slide only goes up, and no base or elbow move crosses the
+bin unless the slide is fully up; `slide_wrist.py` refuses anything else, for every tool. Leaving the
+park, the arm swings out over the plate first and lowers there.
 
 **Controls:**
 
@@ -297,13 +387,70 @@ target past the arm's limits gives "CAN'T REACH" and nothing moves. Every move i
 Bins use the angles taught at each slot on 2026-11-02 (`robot_control/config/bins_real.toml`), before
 the current gripper and firmware, so they may be a little off.
 
-## The full loop (not built yet)
+## The sorting run
 
-The agreed work cycle, for the top-level program that will run it: park out of the camera's view, take
-a fresh snapshot, detect the bodies and map them to the robot frame, check whether the last pick worked,
-classify each one, rank them, take the first with a clear reachable grasp, pick it, place it in its bin,
-and repeat until the plate is empty. Re-scanning after every pick means a disturbed resistor needs no
-special handling, and a failed grasp shows up as a body still at the last target.
+Sorts the plate into the trays on its own, until nothing is left that it can sort. One window does it
+all, from power-on to the end of the run. Not yet run on the arm.
+
+```
+.venv\Scripts\python scripts\sort_resistors.py                 # the arm, the gripper and the camera
+.venv\Scripts\python scripts\sort_resistors.py --look-only     # the camera alone: LOOK only, the arm never moves
+```
+
+Plug in the camera, the gripper board and the Nucleo first, and keep a hand on the servo supply's plug
+whenever the arm moves. The window shows what it is doing, when the arm was last started, the plate at the
+last look (green: the next pick, orange: picked later, grey: staying, each labelled with why), and the
+**TRAYS**: which value each bin holds and how many have gone in. The bin the arm is heading for has an
+orange border. All eight slots take values.
+Under the trays, **WHERE THE BINS ARE**: the rig from above with each slot labelled with its id and
+value, so a bin on screen can be found on the bench. The picture is the digital twin's, with tray A
+turned 90 degrees as on the rig (`scripts/twin/render_top_view.py` writes `robot_control/config/rig_map.png`;
+both stay out of git with the twin). Without it the slots are drawn on a plain background.
+The arm is drawn on the map as it moves: its links, the jaws opening and closing, a resistor between
+them while it holds one, an orange ring where a move is heading, and the slide's height on a gauge.
+`robot_control/hardware/arm_monitor.py` (`ArmMonitor`) makes that possible: every command to the
+Nucleo and the gripper passes through it unchanged, and it works out where each joint is part way
+through a move, so the window can ask as often as it draws without any extra serial traffic.
+
+| Button | What it does |
+|---|---|
+| CALIBRATE ARM | After the Nucleo has been powered on: the start sequence (`start`, elbow to 110, `park`, wrist 0) and the elbow check (105, 115, 110, each within 1 degree). Press it once to see what to set by hand first (supply off: slide fully up, elbow folded, gripper away from the tower, plate clear), then again within 20 s to go. A bad elbow check says so: free the cables and calibrate again |
+| CHECK AIM | Does the arm still go where the camera says? The closed tip put down at 5 points, found by the camera; a steady shift is taken out of `camera_calibration.json` and saved (the old file kept in `logs/`), and picks aim by it at once. At the start of a session and after the rig has moved. `robot_control/task/aim_check.py` |
+| LOOK | One look and its plan; nothing moves. Do this before the first START |
+| START | The sorting run. Pressing it again after a stop carries on with the same bins |
+| STOP | Ends the run once the arm is parked again, never mid-move or holding a resistor |
+| q / Esc | Quit, once nothing is running |
+
+The program can't tell whether the Nucleo has lost power since the arm was last started (the time is
+shown): if it has, press CALIBRATE ARM before anything else. The arm's fit to the camera
+(`camera_calibrate.py`, "Calibrating the system" above) is separate, and only needed after the rig moves.
+
+**The cycle** (`robot_control/task/supervisor.py`, the Supervisor): look with the arm parked, judge the last
+pick, plan, pick, drop, park, and again. Looking again after every pick means nothing is tracked between
+picks: a knocked resistor is just somewhere new, and a missed pick shows as a resistor still where the
+jaws went.
+
+**The parts**, one class each, so each can be read on its own:
+
+| Class | File | Its job |
+|---|---|---|
+| `Eyes` | `vision/eyes.py` | One look: the plate found and its exposure settled, then the mean of 8 fresh frames (as robot_offline's `read_plate` takes a picture, and as the band reader was trained), the bodies segmented on it, each one's centre and direction. Each body's value is read from that picture and from a close-up of its own at the focus its distance needs (robot_offline's `closeup.take`, about 1.5 s a body), the two views averaged as the reader was scored. Close-ups are kept by where a body lies, so only the first look, and new or moved bodies, take them (`--no-closeups` skips them). The scene must be still: the arm parked, hands clear |
+| `BodyMemory` | `vision/body_memory.py` | Follows each resistor from look to look by where it lies (as robot_offline's `Steady`): a known one still counts when its score dips, one missing from a look is waited for, a picked one that's still there is the same resistor. Averages each one's band readings over its last 3 looks and its close-up (as `learned.Views`) |
+| `Resistor`, `PlateView` | `world/types.py` | What a look returns |
+| `BinPlan` | `planning/bins.py` | Which bin each value goes in: the first time a value is sorted it takes the next free slot (A1, A2, ... in `bins_real.toml`'s order) and keeps it for the run. All eight slots take values; a value outside 10 ohm to 10 kohm has none |
+| `PickMemory` | `planning/memory.py` | The gripper can't feel a resistor, so the next look judges a pick: its spot empty means sorted, a body still there means missed. Two misses, or a pick the arm refused, and that resistor is left |
+| `Planner` | `planning/planner.py` | Which resistor next (the most isolated), and what becomes of every other one |
+| `Arm` | `motion/arm.py` | Park, pick, drop, each saying whether it worked: resistor_nav's moves, with every check in `slide_wrist.py` |
+| `RunWindow` | `task/window.py` | The window: status, plate, trays and buttons. It only draws; the run tells it what to show |
+| `SortingApp` | `task/app.py` | The buttons, each running one job (calibrate, look, run) in the background so the window stays alive |
+| `RunLog` | `task/run_log.py` | `logs/sort_runs/<time>/`: events.csv and a picture per look |
+
+**What stays on the plate:** a resistor read below the band reader's confidence limit (0.7 for now), one
+read outside 10 ohm to 10 kohm, one the arm missed twice or couldn't reach, and one whose value has no
+bin left once all 8 are taken.
+
+**When it stops:** nothing left to sort; 3 picks in a row that came to nothing (check the calibration); a
+resistor it couldn't drop (the arm is left holding it: a person must look); the plate not found; q.
 
 ## No-go zones (the camera tower)
 

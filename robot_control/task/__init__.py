@@ -1,2 +1,2 @@
-"""The Supervisor: runs the work cycle, makes every module call, and owns run state (PickMemory).
+"""The top of the program: the Supervisor runs the sorting cycle; RunWindow shows it, RunLog records it.
 """

@@ -164,8 +164,10 @@ class KeepOutMap:
 class VisionSettings:
     weights: Path                   # the segmentation model; relative paths are in the robot_offline repo
     conf: float
+    min_confidence: float | None = None     # the band reader's limit for the sorting run; None: the reader's own
 
     @classmethod
     def from_config(cls):
         t = load("vision")
-        return cls(Path(t["weights"]), float(t["conf"]))
+        limit = t.get("min_confidence")
+        return cls(Path(t["weights"]), float(t["conf"]), None if limit is None else float(limit))

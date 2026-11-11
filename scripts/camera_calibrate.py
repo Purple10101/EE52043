@@ -119,14 +119,15 @@ def close_jaws():
 def drive(scara, joint, target, seconds):
     """Moves the wrist or slide to target in steps the bench allows."""
     last = bench.load_state()[joint]
-    for angle in bench.slide_steps(last, target, bench.MAX_STEP[joint]):
+    for angle in bench.slide_steps(last, target, bench.MAX_STEP[joint], joint == "slide"):
         bench.move(scara, joint, round(angle, 1), seconds)
 
 
 def visit(scara, point, lens, surface, kinematics, rig, correction, landed, writer):
     base, elbow, wrist = plan_point(point, lens, kinematics, rig, correction)
     print(f"\nPoint ({point[0]:g}, {point[1]:g}): base {base:.1f}, elbow {elbow:.1f}, wrist {wrist:.1f}", flush=True)
-    drive(scara, "slide", bench.HOVER_SLIDE, SLIDE_MOVE_S)
+    if bench.load_state()["slide"] > bench.HOVER_SLIDE:     # up to the hover; from the park it is higher already
+        drive(scara, "slide", bench.HOVER_SLIDE, SLIDE_MOVE_S)
     bench.approach(scara, base, elbow, wrist, bench.SWING_S)
     (camera_guide.LIVE.parent / "near.txt").write_text(f"{point[0]} {point[1]}")
     drive(scara, "slide", PICK_SLIDE, SLIDE_MOVE_S)

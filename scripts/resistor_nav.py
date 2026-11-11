@@ -55,10 +55,10 @@ from robot_control.config import ArmSettings, KeepOutMap, RigSettings, VisionSet
 from robot_control.gripper import Gripper, GripperError  # noqa: E402
 from robot_control.kinematics import KeepOut, route  # noqa: E402
 from robot_control.vision.arm_fit import JointCorrection, load_calibration  # noqa: E402
+from robot_control.vision.bodies import body_direction, centroid_mm  # noqa: E402
 from robot_control.kinematics.arm import JointState, Kinematics  # noqa: E402
 from robot_control.vision.detector import Detector, camera_mm  # noqa: E402
 from robot_control.vision.guide import plan_jaws, pots_for, wrist_across  # noqa: E402
-from robot_control.vision.rig import correct_height  # noqa: E402
 
 WINDOW = "resistor navigation"
 PLATE_PX = 750              # the plate view's height: with both rows of buttons, the window's 900
@@ -91,15 +91,6 @@ def body_at(polygons, point):
         if d >= -nearest:
             best, nearest = i, -d
     return best
-
-
-def centroid_mm(poly, body, cal, lens):
-    """A body's centre in scene mm: its skeleton's centroid, or the outline's middle, moved for its height."""
-    st = cal.settings
-    centre = body.centroid if body is not None else np.asarray(poly, float).reshape(-1, 2).mean(0)
-    scene = rectify.rect_to_mm(np.asarray(centre, float).reshape(1, 2), st)
-    width_mm = (body.width / st.px_per_mm) if body is not None else 2.4
-    return correct_height(scene, lens, st.top_z_mm, width_mm / 2)[0]
 
 
 def load_bins(path=BINS):
@@ -164,8 +155,13 @@ class Navigator(threading.Thread):
         getattr(self, command[0])(*command[1:])
 
     def drive(self, joint, target, seconds):
-        for angle in bench.slide_steps(bench.load_state()[joint], target, bench.MAX_STEP[joint]):
+        for angle in bench.slide_steps(bench.load_state()[joint], target, bench.MAX_STEP[joint], joint == "slide"):
             bench.move(self.scara, joint, round(angle, 1), seconds)
+
+    def lift(self):
+        """The slide up to the travel height if it is lower; from the park it is higher already, and stays."""
+        if bench.load_state()["slide"] > bench.HOVER_SLIDE:
+            self.drive("slide", bench.HOVER_SLIDE, SLIDE_MOVE_S)
 
     def go(self, target, body_deg):
         """There on the calibration: the jaws across the body, the tip over its centre. Coming from a bin, the
@@ -189,12 +185,17 @@ class Navigator(threading.Thread):
         if self.gripper is not None:
             self.gripper.open()
         if bench.load_state()["slide"] > NAV_SLIDE:
-            self.drive("slide", bench.HOVER_SLIDE, SLIDE_MOVE_S)
+            self.lift()
         for stop in path[:-1]:
             change = max(abs(stop[0] - here[0]), abs(stop[1] - here[1]))
             if change > 0.1:
                 bench.swing(self.scara, *stop, bench.load_state()["wrist"], max(bench.SWING_S, change / BIN_DEG_PER_S))
             here = stop
+        if bench.passes_bin(here, (base, elbow), self.kinematics, self.rig):
+            # from the park, over the non-resistor bin: out over the plate with the slide still fully up, then down
+            change = max(abs(base - here[0]), abs(elbow - here[1]))
+            bench.swing(self.scara, base, elbow, bench.load_state()["wrist"], max(bench.SWING_S, change / BIN_DEG_PER_S))
+            self.drive("slide", bench.HOVER_SLIDE, SLIDE_MOVE_S)
         bench.glide(self.scara, base, elbow, wrist, NAV_SLIDE, GLIDE_S)
         got_base, got_elbow = bench.read_joints(self.scara)
         self.say(f"arrived, about {NAV_HEIGHT_MM:.0f} mm up: base off {got_base - base:+.2f}, elbow off {got_elbow - elbow:+.2f} deg, "
@@ -202,22 +203,24 @@ class Navigator(threading.Thread):
         return max(abs(got_base - base), abs(got_elbow - elbow))
 
     def pick(self, target, body_deg):
-        """Over a resistor as go does, then down, grip and up. Holding from then on, until a bin takes it."""
+        """Over a resistor as go does, then down, grip and up. Holding from then on, until a bin takes it.
+        Returns whether the jaws closed where it lay (they may still have missed it)."""
         if self.gripper is None:
             self.say("CAN'T PICK, nothing moved: the gripper board isn't connected")
-            return
+            return False
         off = self.go(target, body_deg)
         if off is None:
-            return
+            return False
         if off > BIN_TOLERANCE_DEG:
             self.say(f"NOT LOWERING, the arm missed by {off:.2f} deg")
-            return
+            return False
         self.drive("slide", PICK_SLIDE, SLIDE_MOVE_S)
         self.gripper.close()
         time.sleep(GRIP_SETTLE_S)
         self.holding = True
         self.drive("slide", bench.HOVER_SLIDE, SLIDE_MOVE_S)
         self.say("HOLDING A RESISTOR: choose a bin")
+        return True
 
     def jaws(self, action):
         """OPEN or CLOSE, on their own."""
@@ -229,7 +232,8 @@ class Navigator(threading.Thread):
 
     def to_bin(self, name, slot):
         """Over a bin at the travel height, the jaws turned so what they hold lies along the slot, then the
-        gripper lowered. Nothing moves unless a way there exists, and it only lowers if the arm got there."""
+        gripper lowered. Nothing moves unless a way there exists, and it only lowers if the arm got there.
+        Returns whether it got there and lowered (and dropped what it held)."""
         base, elbow = pots_for(drop_point(slot), self.kinematics, RigSettings.from_config(), JointCorrection())
         wrist = wrist_across(base, elbow, slot["long_axis_deg"], bench.SAFE["wrist"], WRIST_CENTRE)
         here = bench.read_joints(self.scara, bench.QUICK_READS)
@@ -237,10 +241,10 @@ class Navigator(threading.Thread):
         if path is None:
             self.say(f"CAN'T REACH BIN {name}, nothing moved: base {base:.1f}, elbow {elbow:.1f} is in the keep-out"
                      + (". STILL HOLDING: choose another bin" if self.holding else ""))
-            return
+            return False
         self.parked = False
         self.say(f"going to bin {name}")
-        self.drive("slide", bench.HOVER_SLIDE, SLIDE_MOVE_S)
+        self.lift()
         turned = bench.load_state()["wrist"]
         for stop in path:
             change = max(abs(stop[0] - here[0]), abs(stop[1] - here[1]), abs(wrist - turned))
@@ -251,7 +255,7 @@ class Navigator(threading.Thread):
         off = f"base off {got_base - base:+.2f}, elbow off {got_elbow - elbow:+.2f} deg"
         if max(abs(got_base - base), abs(got_elbow - elbow)) > BIN_TOLERANCE_DEG:
             self.say(f"NOT LOWERING at bin {name}, the arm missed: {off}" + (". STILL HOLDING: choose a bin" if self.holding else ""))
-            return
+            return False
         self.drive("slide", BIN_SLIDE, SLIDE_MOVE_S)
         if self.holding:
             self.gripper.open()
@@ -259,8 +263,9 @@ class Navigator(threading.Thread):
             self.holding = False
             self.drive("slide", bench.HOVER_SLIDE, SLIDE_MOVE_S)
             self.say(f"dropped in bin {name}: {off}. PARK to look at the plate again")
-            return
+            return True
         self.say(f"at bin {name}, lowered: {off}, wrist {wrist:.1f}")
+        return True
 
     def nudge(self, step):
         """Turns the wrist a little, for lining the jaws up by eye."""
@@ -282,16 +287,9 @@ class Navigator(threading.Thread):
 
     def park(self):
         self.say("parking")
-        self.drive("slide", bench.HOVER_SLIDE, SLIDE_MOVE_S)
-        bench.park(self.scara)
+        bench.park(self.scara)      # the slide fully up first: the park is over the non-resistor bin
         self.parked = True
         self.say("parked: click a resistor, then PLAY")
-
-
-def body_direction(body, settings):
-    """A body's long axis, scene deg from +x anticlockwise, from the ends of its spine."""
-    a, b = rectify.rect_to_mm(np.asarray(body.spine, float)[[0, -1]], settings)
-    return float(np.degrees(np.arctan2(*(b - a)[::-1])))
 
 
 def draw_jaw_line(rect, body, settings, chosen):

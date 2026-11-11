@@ -67,7 +67,7 @@ def test_the_waiting_view_fits_a_wide_camera_frame_into_the_plate_view():
 sent = []
 
 
-def run_to_bin(monkeypatch, landed):
+def run_to_bin(monkeypatch, landed, slide=20.0):
     """to_bin with the arm faked, landing at landed (base, elbow): the moves it made, in order."""
     made = []
     sent.clear()
@@ -75,7 +75,7 @@ def run_to_bin(monkeypatch, landed):
     monkeypatch.setattr(resistor_nav, "pots_for", lambda *a: (20.0, 100.0))
     monkeypatch.setattr(resistor_nav, "bin_path", lambda *a: [(20.0, 100.0)])
     monkeypatch.setattr(bench, "read_joints", lambda *a: landed)
-    monkeypatch.setattr(bench, "load_state", lambda: {"wrist": 50.0, "slide": 20.0})
+    monkeypatch.setattr(bench, "load_state", lambda: {"wrist": 50.0, "slide": slide})
     monkeypatch.setattr(bench, "swing", lambda *a: (made.append("swing"), sent.append(a)))
     nav = Navigator(None, None, None, None)
     monkeypatch.setattr(nav, "drive", lambda joint, angle, seconds: made.append((joint, angle)))
@@ -85,8 +85,18 @@ def run_to_bin(monkeypatch, landed):
 
 def test_the_gripper_lowers_once_it_is_over_the_bin(monkeypatch):
     made, status = run_to_bin(monkeypatch, (20.5, 100.5))
-    assert made == [("slide", resistor_nav.bench.HOVER_SLIDE), "swing", ("slide", BIN_SLIDE)]
+    assert made == ["swing", ("slide", BIN_SLIDE)]
     assert "lowered" in status
+
+
+def test_a_lowered_gripper_lifts_before_going_to_a_bin(monkeypatch):
+    made, _ = run_to_bin(monkeypatch, (20.0, 100.0), slide=BIN_SLIDE)
+    assert made == [("slide", resistor_nav.bench.HOVER_SLIDE), "swing", ("slide", BIN_SLIDE)]
+
+
+def test_from_the_park_the_gripper_goes_to_a_bin_still_fully_up(monkeypatch):
+    made, _ = run_to_bin(monkeypatch, (20.0, 100.0), slide=resistor_nav.bench.PARK_SLIDE)
+    assert made == ["swing", ("slide", BIN_SLIDE)]
 
 
 def test_the_gripper_stays_up_if_the_arm_missed_the_bin(monkeypatch):
@@ -106,13 +116,14 @@ def test_every_bin_has_a_wrist_angle_in_range():
         assert -90.0 <= wrist_across(50.0, 110.0, slot["long_axis_deg"], (-90.0, 120.0), 50.0) <= 120.0
 
 
-def run_go(monkeypatch, slide, path):
+def run_go(monkeypatch, slide, path, from_park=False):
     """go with the arm faked and the slide at slide: the moves it made, in order."""
     made = []
     bench = resistor_nav.bench
     monkeypatch.setattr(resistor_nav, "plan_jaws", lambda *a, **k: (-50.0, 100.0, 40.0))
     monkeypatch.setattr(resistor_nav, "bin_path", lambda *a: path)
     monkeypatch.setattr(bench, "swing_refusal", lambda *a, **k: None)
+    monkeypatch.setattr(bench, "passes_bin", lambda *a: from_park)
     monkeypatch.setattr(bench, "read_joints", lambda *a: (55.0, 110.0))
     monkeypatch.setattr(bench, "load_state", lambda: {"wrist": 8.0, "slide": slide})
     monkeypatch.setattr(bench, "swing", lambda *a: made.append("swing"))
@@ -140,6 +151,11 @@ def test_going_round_the_tower_comes_after_the_lift(monkeypatch):
 def test_a_move_between_resistors_doesnt_lift(monkeypatch):
     made, _ = run_go(monkeypatch, resistor_nav.NAV_SLIDE, [(-50.0, 100.0)])
     assert made == ["glide"]
+
+
+def test_leaving_the_park_swings_out_fully_up_then_lowers(monkeypatch):
+    made, _ = run_go(monkeypatch, resistor_nav.bench.PARK_SLIDE, [(-50.0, 100.0)], from_park=True)
+    assert made == ["swing", ("slide", resistor_nav.bench.HOVER_SLIDE), "glide"]
 
 
 def test_nothing_moves_with_no_way_round_the_tower(monkeypatch):
@@ -192,7 +208,7 @@ def test_a_bin_drops_the_resistor_at_the_bottom_then_lifts(monkeypatch):
     nav, made = holding_nav(monkeypatch)
     nav.perform(("to_bin", "B1", SLOT))
     hover = resistor_nav.bench.HOVER_SLIDE
-    assert made == [("slide", hover), "swing", ("slide", BIN_SLIDE), "open", ("slide", hover)]
+    assert made == ["swing", ("slide", BIN_SLIDE), "open", ("slide", hover)]
     assert not nav.holding
     assert "dropped" in nav.status
 

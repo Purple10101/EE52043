@@ -27,5 +27,5 @@ bins = [
     { id = "B1", centre_mm = [-129.3, -46.4], long_axis_deg = 10.9 },    # base 25.8, elbow 105.7
     { id = "B2", centre_mm = [-124.6, -71.0], long_axis_deg = 10.9 },    # base 17.2, elbow 101.7
     { id = "B3", centre_mm = [-119.8, -95.5], long_axis_deg = 10.9 },    # base 10.9, elbow 94.9
-    { id = "B4", centre_mm = [-115.1, -120.1], long_axis_deg = 10.9, drop_along_mm = 22.0, reject = true },   # base 7.0, elbow 85.3
+    { id = "B4", centre_mm = [-115.1, -120.1], long_axis_deg = 10.9, drop_along_mm = 22.0 },   # base 7.0, elbow 85.3
 ]

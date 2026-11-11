@@ -5,8 +5,9 @@ import pytest
 
 pytest.importorskip("serial")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from slide_wrist import (HOVER_SLIDE, LAND_MAX_DEG, LAND_TOLERANCE_DEG, arm_refusal, land, over_plate,  # noqa: E402
-                         plate_refusal, refusal, slide_steps, swing_refusal)
+import slide_wrist  # noqa: E402
+from slide_wrist import (HOVER_SLIDE, LAND_MAX_DEG, LAND_TOLERANCE_DEG, PARK, PARK_SLIDE, arm_refusal,  # noqa: E402
+                         bin_refusal, land, over_bin, over_plate, plate_refusal, refusal, slide_steps, swing_refusal)
 
 from robot_control.config import ArmSettings, KeepOutMap, RigSettings  # noqa: E402
 from robot_control.kinematics.arm import Kinematics  # noqa: E402
@@ -100,13 +101,65 @@ def swing(base, elbow, wrist, start, slide):
 
 
 def test_a_swing_across_the_plate_needs_the_slide_up():
-    assert swing(-50.0, 97.0, 90.0, PARKED, HOVER_SLIDE) is None
-    assert "over the plate" in swing(-50.0, 97.0, 90.0, PARKED, 45.0)
+    assert swing(-50.0, 97.0, 90.0, BESIDE, HOVER_SLIDE) is None
+    assert "over the plate" in swing(-50.0, 97.0, 90.0, BESIDE, 45.0)
 
 
 def test_a_glide_may_cross_the_plate_at_its_own_height_but_no_lower():
-    assert swing_refusal(-50.0, 97.0, 90.0, PARKED, 45.0, ARM, ZONES, KIN, RIG, clear=45.0) is None
-    assert "over the plate" in swing_refusal(-50.0, 97.0, 90.0, PARKED, 46.0, ARM, ZONES, KIN, RIG, clear=45.0)
+    assert swing_refusal(-50.0, 97.0, 90.0, BESIDE, 45.0, ARM, ZONES, KIN, RIG, clear=45.0) is None
+    assert "over the plate" in swing_refusal(-50.0, 97.0, 90.0, BESIDE, 46.0, ARM, ZONES, KIN, RIG, clear=45.0)
+
+
+def test_the_park_is_over_the_non_resistor_bin_and_the_plate_isnt():
+    assert over_bin(*PARKED, KIN, RIG)
+    assert not over_bin(*OVER, KIN, RIG)
+    assert not over_bin(*BESIDE, KIN, RIG)
+
+
+def test_leaving_or_reaching_the_park_needs_the_slide_fully_up():
+    assert swing(-50.0, 97.0, 90.0, PARKED, PARK_SLIDE) is None
+    assert "non-resistor bin" in swing(-50.0, 97.0, 90.0, PARKED, HOVER_SLIDE)
+    assert "non-resistor bin" in swing(*PARKED, 90.0, OVER, HOVER_SLIDE)
+    assert bin_refusal("base", -77.0, *OVER, PARK_SLIDE, KIN, RIG) is None
+    assert "non-resistor bin" in bin_refusal("base", -77.0, *OVER, HOVER_SLIDE, KIN, RIG)
+    assert "non-resistor bin" in bin_refusal("base", -45.0, *PARKED, HOVER_SLIDE, KIN, RIG)
+
+
+def test_over_the_non_resistor_bin_the_slide_only_goes_up():
+    assert bin_refusal("slide", PARK_SLIDE, *PARKED, HOVER_SLIDE, KIN, RIG) is None
+    assert bin_refusal("slide", -10.0, *PARKED, HOVER_SLIDE, KIN, RIG) is None      # on its way up
+    assert "only goes up" in bin_refusal("slide", HOVER_SLIDE, *PARKED, PARK_SLIDE, KIN, RIG)
+    assert "first move" in bin_refusal("slide", 0.0, *PARKED, None, KIN, RIG)
+    assert bin_refusal("slide", 63.0, *OVER, HOVER_SLIDE, KIN, RIG) is None         # over the plate, as before
+
+
+def run_park(monkeypatch, pose, slide):
+    """park with the arm faked at pose (base, elbow) and the slide at slide: the moves it made, in order."""
+    made, at, state = [], dict(zip(("base", "elbow"), pose)), {"wrist": 0.0, "slide": slide}
+
+    def move(scara, joint, angle, seconds):
+        made.append((joint, angle))
+        if joint in at:
+            at[joint] = angle
+        else:
+            state[joint] = angle
+
+    monkeypatch.setattr(slide_wrist, "move", move)
+    monkeypatch.setattr(slide_wrist, "load_state", lambda: state)
+    monkeypatch.setattr(slide_wrist, "read_joints", lambda *a: (at["base"], at["elbow"]))
+    monkeypatch.setattr(slide_wrist, "print", lambda *a: None, raising=False)
+    slide_wrist.park(None)
+    return made
+
+
+def test_parking_raises_the_slide_fully_before_the_arm_moves(monkeypatch):
+    made = run_park(monkeypatch, (-45.0, 120.0), 63.0)
+    assert made == [("slide", PARK_SLIDE), ("elbow", PARK["elbow"]), ("base", PARK["base"])]
+
+
+def test_parking_after_a_start_folds_the_elbow_before_the_slides_first_move(monkeypatch):
+    made = run_park(monkeypatch, (2.14, 90.46), None)
+    assert made == [("elbow", PARK["elbow"]), ("slide", 0.0), ("slide", PARK_SLIDE), ("base", PARK["base"])]
 
 
 def test_a_swing_keeps_to_the_limits_and_clear_of_the_tower():
@@ -117,10 +170,12 @@ def test_a_swing_keeps_to_the_limits_and_clear_of_the_tower():
 
 
 def test_slide_steps_to_the_hover():
-    assert slide_steps(None, -40.0) == [0.0, -30.0, -40.0]
+    assert slide_steps(None, -40.0) == [0.0, -40.0]               # after a RESET: to 0 first, then up at once
     assert slide_steps(-40.0, -40.0) == []
-    assert slide_steps(0.0, -40.0) == [-30.0, -40.0]
+    assert slide_steps(63.0, -50.0) == [-50.0]                    # up from the plate to fully up: one move
     assert slide_steps(-42.0, -40.0) == [-40.0]
+    assert slide_steps(-50.0, 63.0) == [-20.0, 10.0, 40.0, 63.0]  # down: 30 deg steps, as before
+    assert slide_steps(0.0, -40.0, 30.0, up_in_one=False) == [-30.0, -40.0]    # the wrist: steps both ways
 
 
 def test_the_first_move_after_a_reset_must_be_to_zero():
@@ -132,6 +187,8 @@ def test_the_first_move_after_a_reset_must_be_to_zero():
 def test_later_moves_are_small_and_inside_the_safe_range():
     assert refusal("slide", 30.0, 0.0) is None
     assert "step" in refusal("slide", 31.0, 0.0)
+    assert refusal("slide", -50.0, 63.0) is None                  # up: any distance
+    assert "step" in refusal("wrist", -80.0, 110.0)                # the wrist keeps its step both ways
     assert refusal("wrist", 100.0, -60.0) is None
     assert "step" in refusal("wrist", 110.0, -80.0)
     assert "safe range" in refusal("slide", 64.0, 62.0)
