@@ -1,11 +1,20 @@
 """Calibrates the arm against the camera: visits points on the plate and fits what it finds.
 
-    python scripts/camera_calibrate.py run --calibration <saved plate fit>
+    python scripts/camera_calibrate.py plate
+    python scripts/camera_calibrate.py run [--calibration <saved plate fit>]
     python scripts/camera_calibrate.py fit logs/camera_calibration_<time>.csv [--save]
-    python scripts/camera_calibrate.py check --calibration <saved plate fit>
+    python scripts/camera_calibrate.py check [--calibration <saved plate fit>]
 
-run needs scripts/tip_view.py --snapshot --lock running, which holds the camera, and the arm started and
-parked (scripts/slide_wrist.py). At each point it lifts to the travel height, goes to the point with the
+The README's "Calibrating the system" is the order to use them in.
+
+plate finds the plate in a live frame (robot_offline's plate_search.find_now, as every tool finds it) and
+saves the fit to logs/tips/plate_<time>_rectify.json, which run, check and tip_view.py use. Nothing else may be
+using the camera, and the arm must be parked.
+
+run and check (--calibration defaults to the newest plate_*_rectify.json) need scripts/tip_view.py
+--snapshot --lock running, which holds the camera, and the arm started and parked (scripts/slide_wrist.py).
+They close the jaws first if the gripper board is connected: the camera finds the tip by the closed jaws'
+V. At each point it lifts to the travel height, goes to the point with the
 jaws face-on to the camera, comes down to the pick height, and reads the tip there beside the base and
 elbow potentiometers. At the pick height the tip is all but on the plate, so what the camera sees needs
 almost no correction for height. The arm needn't land on the point: a pair only needs its two halves
@@ -17,7 +26,9 @@ potentiometers (robot_control/vision/arm_fit.py) and reports each point, and how
 predicted when left out of the fit. --save keeps the joint fit for everything that plans a move.
 
 check goes to CHECK_POINTS, which the fit never saw, on the saved calibration alone: one move each, the
-camera only watching, and reports how far the tip landed from each at the pick height.
+camera only watching, and reports how far the tip landed from each at the pick height. It also reports
+the calibration on its own: the tip seen against where the potentiometers say the arm is, which leaves
+out how well the joints landed. A low figure there with large misses means landing, not calibration.
 """
 
 import argparse
@@ -33,10 +44,14 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import camera_guide  # noqa: E402
+import cv2  # noqa: E402
 import slide_wrist as bench  # noqa: E402
-from robot_offline.pre import rectify  # noqa: E402
+from robot_offline import config as offline_config  # noqa: E402
+from robot_offline.pre import plate_search, rectify  # noqa: E402
+from robot_offline.pre.camera import open_camera  # noqa: E402
 
 from robot_control.config import ArmSettings, RigSettings  # noqa: E402
+from robot_control.gripper import Gripper, GripperError  # noqa: E402
 from robot_control.kinematics.arm import Kinematics  # noqa: E402
 from robot_control.vision.arm_fit import (JointCorrection, errors_mm, fit_joints, fit_rigid, load_calibration,  # noqa: E402
                                           save_calibration)
@@ -53,6 +68,52 @@ PICK_HEIGHT_MM = 1.0        # the tip above the plate there, by eye
 SLIDE_MOVE_S = 1.0
 SETTLED_S = 1.0
 FIELDS = ["target_x", "target_y", "tip_x", "tip_y", "base", "elbow", "wrist", "slide", "height"]
+PLATE_FITS = ROOT / "logs" / "tips"     # plate's saved fits: records the arm calibration is taken against
+
+
+def newest_plate_fit():
+    """The newest plate fit saved by plate (not tip_view's tip_* saves), or None."""
+    found = sorted(PLATE_FITS.glob("plate_*_rectify.json"), key=lambda p: p.stat().st_mtime) if PLATE_FITS.is_dir() else []
+    return str(found[-1]) if found else None
+
+
+def plate(args):
+    """Finds the plate in a live frame, as every tool does (plate_search.find_now), and saves the fit."""
+    cap = open_camera(offline_config.load("camera"))
+    try:
+        try:
+            cal = plate_search.find_now(cap)
+        except rectify.PlateNotFound as why:
+            sys.exit(f"The plate wasn't found: {why}.\nKeep the arm parked, hands off the plate and the crosshair "
+                     "clear: on a pale bench the crosshair stands in for the edge the bench hides. If it still "
+                     "isn't found, lay a matte black strip along that edge, touching it.")
+        ok, frame = cap.read()
+        exposure = cap.get(cv2.CAP_PROP_EXPOSURE)
+    finally:
+        cap.release()
+    PLATE_FITS.mkdir(parents=True, exist_ok=True)
+    path = PLATE_FITS / f"plate_{time.strftime('%Y%m%d_%H%M%S')}_rectify.json"
+    cal.save(path)
+    cv2.imwrite(str(path.with_name(path.name.replace("_rectify.json", "_raw.png"))), frame)
+    s = cal.fit
+    print(f"Found at exposure {exposure}: edges (share, rms px) {s['edges']}, near side by {s['near_side_by']}, "
+          f"camera at {s['camera_mm']} mm, focal {s['focal_px']} px")
+    print(f"Saved {path.relative_to(ROOT)}. Next, leave this running in its own terminal:\n"
+          f"  .venv\\Scripts\\python scripts\\tip_view.py --snapshot --lock --calibration {path.relative_to(ROOT)}")
+
+
+def close_jaws():
+    """Closes the jaws if the gripper board is connected: the camera finds the tip by the closed V."""
+    try:
+        gripper = Gripper()
+    except (GripperError, OSError) as why:
+        print(f"The gripper board isn't connected ({why}): the jaws must already be closed.")
+        return
+    try:
+        gripper.close()
+        print("Jaws closed.")
+    finally:
+        gripper.disconnect()
 
 
 def drive(scara, joint, target, seconds):
@@ -88,7 +149,11 @@ def visit(scara, point, lens, surface, kinematics, rig, correction, landed, writ
 
 def tour(args, points, name, rig, correction, landed=False):
     """Visits points, writing each pair to logs/<name>_<time>.csv, and parks."""
+    if args.calibration is None:
+        sys.exit("No saved plate fit: run plate first.")
+    print(f"Plate fit: {args.calibration}")
     cal = rectify.Calibration.load(args.calibration)
+    close_jaws()
     lens, surface = camera_mm(cal), cal.settings.top_z_mm
     kinematics = Kinematics(ArmSettings.from_config())
     scara = bench.smc_api.scara_motion_controller(port=args.port or bench.find_port(), timeout=120)
@@ -113,15 +178,30 @@ def run(args):
     tour(args, POINTS, "camera_calibration", RigSettings.from_config(), JointCorrection())
 
 
+def pairs(rows):
+    """(wrist axes scene mm, potentiometer joints deg), each N × 2, from rows of a run or check."""
+    tips = np.array([(float(r["tip_x"]), float(r["tip_y"])) for r in rows])
+    joints = np.array([(float(r["base"]), float(r["elbow"])) for r in rows])
+    axes = np.array([axis_mm(t, b, e, float(r["wrist"])) for t, (b, e), r in zip(tips, joints, rows)])
+    return axes, joints
+
+
 def check(args):
-    path = tour(args, CHECK_POINTS, "camera_check", *load_calibration(), landed=True)
+    rig, correction = load_calibration()
+    path = tour(args, CHECK_POINTS, "camera_check", rig, correction, landed=True)
     with open(path, newline="") as f:
         rows = list(csv.DictReader(f))
+    if not rows:
+        print("No point was read: is the tip in view, with the jaws closed?")
+        return
     misses = np.array([np.hypot(float(r["tip_x"]) - float(r["target_x"]), float(r["tip_y"]) - float(r["target_y"]))
                        for r in rows])
-    if len(misses):
-        print(f"{len(misses)} of {len(CHECK_POINTS)} points: {np.sqrt((misses ** 2).mean()):.2f} mm rms, "
-              f"worst {misses.max():.2f}: " + " ".join(f"{d:.1f}" for d in misses))
+    print(f"{len(misses)} of {len(CHECK_POINTS)} points: {np.sqrt((misses ** 2).mean()):.2f} mm rms, "
+          f"worst {misses.max():.2f}: " + " ".join(f"{d:.1f}" for d in misses))
+    axes, joints = pairs(rows)
+    alone = np.hypot(*errors_mm(axes, joints, Kinematics(ArmSettings.from_config()), rig, correction).T)
+    print(f"calibration alone: {np.sqrt((alone ** 2).mean()):.2f} mm rms, worst {alone.max():.2f}: "
+          + " ".join(f"{d:.1f}" for d in alone))
 
 
 def report(name, fit):
@@ -144,9 +224,7 @@ def left_out(fitter, scene, joints, kinematics):
 def fit(args):
     with open(args.pairs, newline="") as f:
         rows = list(csv.DictReader(f))
-    tips = np.array([(float(r["tip_x"]), float(r["tip_y"])) for r in rows])
-    joints = np.array([(float(r["base"]), float(r["elbow"])) for r in rows])
-    axes = np.array([axis_mm(t, b, e, float(r["wrist"])) for t, (b, e), r in zip(tips, joints, rows)])
+    axes, joints = pairs(rows)
     kinematics, rig = Kinematics(ArmSettings.from_config()), RigSettings.from_config()
     print(f"{len(rows)} pairs")
     nominal = np.hypot(*errors_mm(axes, joints, kinematics, rig).T)
@@ -170,11 +248,13 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--port", help="the Nucleo's serial port (default: found by its USB id)")
     commands = p.add_subparsers(dest="command", required=True)
+    commands.add_parser("plate").set_defaults(go=plate)
+    fit_help = "the saved plate fit tip_view started from (default: the newest from plate)"
     r = commands.add_parser("run")
-    r.add_argument("--calibration", required=True, help="the saved plate fit tip_view started from")
+    r.add_argument("--calibration", default=newest_plate_fit(), help=fit_help)
     r.set_defaults(go=run)
     c = commands.add_parser("check")
-    c.add_argument("--calibration", required=True, help="the saved plate fit tip_view started from")
+    c.add_argument("--calibration", default=newest_plate_fit(), help=fit_help)
     c.set_defaults(go=check)
     f = commands.add_parser("fit")
     f.add_argument("pairs")

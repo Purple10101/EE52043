@@ -9,8 +9,9 @@
 # that fitted row, and long_axis_deg its normal: the slots' long sides (scene, from +x toward +y).
 # Names as on the rig: A1 is the slot furthest from the camera tower, on to B4 beside it.
 #
-# All within robot_real.toml's limits (base 7-61, elbow 85-130). With the camera tower mounted, B4 is
-# inside its keep-out zone (keep_out/camera_tower.json, from the CAD, gripper v4), so it is refused.
+# All within robot_real.toml's limits (base 7-61, elbow 85-130). With the camera tower mounted, B4's centre is
+# inside its keep-out zone (keep_out/camera_tower.json, from the CAD, gripper v4), but the slot is clear from
+# about 15 mm along, away from the tower: drop_along_mm moves the drop point along the slot from its centre.
 # Heights and slot size are the CAD's (bins.toml), not measured on the rig.
 
 slot_floor_z_mm = -47.0
@@ -26,5 +27,5 @@ bins = [
     { id = "B1", centre_mm = [-129.3, -46.4], long_axis_deg = 10.9 },    # base 25.8, elbow 105.7
     { id = "B2", centre_mm = [-124.6, -71.0], long_axis_deg = 10.9 },    # base 17.2, elbow 101.7
     { id = "B3", centre_mm = [-119.8, -95.5], long_axis_deg = 10.9 },    # base 10.9, elbow 94.9
-    { id = "B4", centre_mm = [-115.1, -120.1], long_axis_deg = 10.9, reject = true },   # base 7.0, elbow 85.3
+    { id = "B4", centre_mm = [-115.1, -120.1], long_axis_deg = 10.9, drop_along_mm = 22.0, reject = true },   # base 7.0, elbow 85.3
 ]

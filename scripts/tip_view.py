@@ -31,8 +31,8 @@ sys.path.insert(0, str(ROOT))
 from robot_offline import config  # noqa: E402
 from robot_offline.pre import rectify  # noqa: E402
 from robot_offline.pre.camera import label, open_camera, show  # noqa: E402
-from robot_offline.pre.exposure import ExposureControl  # noqa: E402
-from robot_offline.pre.live_plate import Fitter, camera_view, rectified_view, status_lines  # noqa: E402
+from robot_offline.pre import plate_search  # noqa: E402
+from robot_offline.pre.live_plate import camera_view, rectified_view, status_lines  # noqa: E402
 
 from robot_control.vision.tip import TipNotFound, find_tip  # noqa: E402
 
@@ -77,13 +77,10 @@ def main():
     print("Opening the camera (a few seconds while exposure and white balance settle)...")
     camera = config.load("camera")
     cap = open_camera(camera)
-    control = ExposureControl(camera["exposure_control"], camera["camera"]["exposure"], camera["camera"]["gain"], cap)
     settings = rectify.Settings.from_config()
     near = args.near or settings.cross_mm
-    fitter = Fitter(settings)
-    if args.calibration:
-        fitter.cal = fitter.first = rectify.Calibration.load(args.calibration)
-    fitter.start()
+    given = rectify.Calibration.load(args.calibration) if args.calibration else None
+    fitter = plate_search.Tracker(cap, settings, cal=given, camera=camera, refit_seconds=0.0)
     print(__doc__.split("Keys:", 1)[1].rstrip())
 
     cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
@@ -96,9 +93,7 @@ def main():
         if NEAR.exists() and NEAR.stat().st_mtime != told:      # a calibration run saying where to look next
             told = NEAR.stat().st_mtime
             near = tuple(float(v) for v in NEAR.read_text().split())
-        fitter.frame = frame
-        cal = fitter.cal
-        control.meter(frame, cal)
+        cal = fitter.update(frame)
         if args.lock and fitter.fitted_at and fitter.error is None:
             fitter.locked = True
 
@@ -117,7 +112,7 @@ def main():
 
         left = camera_view(marked, cal, zoom)
         right = rectified_view(marked, cal, True) if cal is not None else np.zeros_like(left[:, :left.shape[0]])
-        lines = [line] + status_lines(fitter)[:1] + [control.status()]
+        lines = [line] + status_lines(fitter)[:1] + [fitter.control.status()]
         label(left, lines + ["q quit  l lock  z zoom  s save"])
         view = np.hstack([left, right])
         shown = show(view, shown, WINDOW)
@@ -139,7 +134,7 @@ def main():
             cal.save(f"{stem}_rectify.json")
             print(f"Saved {stem}.png: {line}")
 
-    fitter.stop = True
+    fitter.close()
     cap.release()
     cv2.destroyAllWindows()
 

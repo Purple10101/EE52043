@@ -1,33 +1,21 @@
-import cv2
+"""The plate is found only by robot_offline's plate_search (tested there); this repo has none of its own."""
+import importlib.util
+
 import numpy as np
 import pytest
 
-pytest.importorskip("robot_offline.pre.rectify")
-from robot_control.vision.plate_search import outlines  # noqa: E402
-
-PLATE = np.array([[1739, 803], [3023, 870], [3070, 2085], [1453, 1965]], np.int32)
+pytest.importorskip("robot_offline.pre.plate_search")
+from robot_offline.pre import plate_search, rectify  # noqa: E402
 
 
-def frame_with(*shapes):
-    frame = np.full((2592, 4608, 3), 40, np.uint8)
-    cv2.fillPoly(frame, [PLATE], (210, 210, 210))
-    for draw in shapes:
-        draw(frame)
-    return frame
+def test_this_repo_has_no_plate_search_of_its_own():
+    assert importlib.util.find_spec("robot_control.vision.plate_search") is None
 
 
-def nearest(quads):
-    return min(np.abs(q - PLATE).max() for q in quads)
-
-
-def test_the_plate_is_among_the_outlines():
-    assert nearest(outlines(frame_with())) < 15
-
-
-def test_a_lead_across_the_plate_doesnt_hide_it():
-    lead = lambda f: cv2.line(f, (1900, 1000), (2900, 1900), (60, 60, 60), 8, cv2.LINE_AA)
-    assert nearest(outlines(frame_with(lead))) < 15
-
-
-def test_a_frame_with_no_long_lines_gives_no_outlines():
-    assert outlines(np.full((2592, 4608, 3), 40, np.uint8)) == []
+def test_the_detector_finds_the_plate_with_robot_offlines_search_and_doesnt_remember_saved_frames(monkeypatch):
+    from robot_control.vision.detector import Detector
+    calls = []
+    monkeypatch.setattr(plate_search, "find", lambda frame, settings=None, last=None, keep=True: calls.append((last, keep)) or "cal")
+    previous = rectify.Calibration(np.eye(3), np.ones((4, 2)), (4608, 2592), rectify.Settings.from_config())
+    assert Detector.calibrate(None, "frame", previous) == "cal"
+    assert np.array_equal(calls[0][0], previous.corners_px) and calls[0][1] is False
