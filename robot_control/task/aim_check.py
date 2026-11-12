@@ -148,6 +148,26 @@ def to_scene(errors_robot_mm, rig):
     return np.asarray(errors_robot_mm, float).reshape(-1, 2) @ np.array([[c, -s], [s, c]])
 
 
+CAD_LINE = "aim: the arm's CAD geometry (no camera calibration)"
+
+
+def camera_aimed(arm):
+    """Whether the arm aims by the camera calibration (sort_resistors.build_arm's camera_calibration) rather than
+    its CAD geometry. Only then is there an aim for AimCheck to check."""
+    return getattr(getattr(arm, "navigator", None), "geometry", "camera") == "camera"
+
+
+def describe_for(arm):
+    """describe(), the taught pick calibration's line, or CAD_LINE: whichever the arm aims by."""
+    if camera_aimed(arm):
+        return describe()
+    if getattr(arm.navigator, "geometry", "") == "taught":
+        from robot_control.vision import pick_fit
+        taught = pick_fit.load()
+        return taught.describe() if taught else CAD_LINE
+    return CAD_LINE
+
+
 def describe(path=CALIBRATION):
     """One line on the arm-to-plate calibration in use: when it was fitted, and when its aim was last checked."""
     if not Path(path).exists():

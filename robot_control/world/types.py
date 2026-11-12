@@ -82,6 +82,7 @@ class Resistor:
     body_id: int = 0                # which body this is from look to look (vision.BodyMemory), 0 if not followed
     crop: object = None             # its band crop from this look's picture (BGR), for the log
     closeup_crop: object = None     # its close-up's band crop, if it has had one
+    note: str = ""                  # why it has no trusted value (to be measured), "" if it has one
 
     @property
     def is_read(self):
@@ -103,6 +104,7 @@ class PlateView:
     resistors: list[Resistor]
     faint: list = field(default_factory=list)       # (outline px, score, centre mm) found but too faint to be a body
     missing: list = field(default_factory=list)     # centres (mm) of bodies seen before but not in this look
+    focus: str = ""                                 # the focus it was taken at: the focus check's status, or why none
 
 
 @dataclass(eq=False)

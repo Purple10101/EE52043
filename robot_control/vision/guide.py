@@ -13,10 +13,13 @@ from robot_control.vision.rig import scene_to_robot
 
 GAIN = 0.7                  # of the error, each step: the arm overshoots with more
 MAX_STEP_MM = 5.0
-# The tip is off the wrist's axis (a circle fitted to it as the wrist turned, 2026-11-05): TIP_OFFSET_MM
-# from the axis, in scene direction TIP_ANGLE_DEG (from +x, anticlockwise) at wrist WRIST_REF_DEG with
-# base + elbow at TOOL_REF_DEG. It turns clockwise with base, elbow and wrist, the wrist by WRIST_SCALE.
-TIP_OFFSET_MM = 6.8
+# The tip is off the wrist's axis: TIP_OFFSET_MM from the axis, in scene direction TIP_ANGLE_DEG (from +x,
+# anticlockwise) at wrist WRIST_REF_DEG with base + elbow at TOOL_REF_DEG. It turns clockwise with base, elbow
+# and wrist, the wrist by WRIST_SCALE. The offset is the gripper v4 CAD's (Robot Resources/gripper/v4/CAD,
+# confirmed by the user 2026-11-12): the closed fingertips are 12 mm wide and centred on the mount's axis, and
+# the V the camera finds is their end nearest the camera, 6.0 mm out. A circle fitted to the tip as the wrist
+# turned (2026-11-05) gave 6.8, through a guessed tip height. The direction is that circle's.
+TIP_OFFSET_MM = 6.0
 TIP_ANGLE_DEG = 187.6
 WRIST_REF_DEG = 70.0
 TOOL_REF_DEG = 64.8
@@ -70,18 +73,27 @@ def jaw_angle(base, elbow, wrist):
 
 
 def plan_jaws(tip_mm, body_deg, wrist_range, kinematics, rig, start_wrist=WRIST_REF_DEG, correction=JointCorrection(),
-              at_axis=False):
+              at_axis=False, jaw_offset=None):
     """(base, elbow, wrist) deg that keep the tip at scene mm tip_mm with the jaws closing across a body
     lying along body_deg. Turning the wrist swings the tip, so the arm moves to cancel it; the jaws are
     the same turned 180 deg, so of the wrist angles in wrist_range the nearest start_wrist is used.
     at_axis: the point is for the jaws' centre, the axis they turn about, not the tip, so nothing
-    swings. Raises ValueError if there is none."""
+    swings. jaw_offset: (base, elbow, wrist) -> scene mm from the shaft's axis to the jaws' centre (a taught
+    pick calibration, vision/pick_fit.py); when given, the jaws' centre is put on the point by it instead.
+    Raises ValueError if there is none."""
     tip = np.asarray(tip_mm, float)
+
+    def offset_at(base, elbow, wrist):
+        if base is None:
+            return np.zeros(2)
+        if jaw_offset is not None:
+            return np.asarray(jaw_offset(base, elbow, wrist), float)
+        return np.zeros(2) if at_axis else tip_offset_mm(base, elbow, wrist)
 
     def solve(wrist):
         base = elbow = None
         for _ in range(SOLVE_STEPS):
-            offset = tip_offset_mm(base, elbow, wrist) if base is not None and not at_axis else np.zeros(2)
+            offset = offset_at(base, elbow, wrist)
             base, elbow = pots_for(tip - offset, kinematics, rig, correction)
             wrist += ((jaw_angle(base, elbow, wrist) - body_deg - 90.0 + 90.0) % 180.0 - 90.0) / WRIST_SCALE
         return base, elbow, wrist

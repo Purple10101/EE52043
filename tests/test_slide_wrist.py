@@ -147,12 +147,23 @@ def run_park(monkeypatch, pose, slide):
     monkeypatch.setattr(slide_wrist, "move", move)
     monkeypatch.setattr(slide_wrist, "load_state", lambda: state)
     monkeypatch.setattr(slide_wrist, "read_joints", lambda *a: (at["base"], at["elbow"]))
+    def swing(scara, base, elbow, wrist, seconds):
+        made.append(("swing", base, elbow))
+        at.update(base=base, elbow=elbow)
+
+    monkeypatch.setattr(slide_wrist, "swing", swing)
     monkeypatch.setattr(slide_wrist, "print", lambda *a: None, raising=False)
     slide_wrist.park(None)
     return made
 
 
-def test_parking_raises_the_slide_fully_before_the_arm_moves(monkeypatch):
+def test_parking_raises_the_slide_fully_then_swings_in_one_move(monkeypatch):
+    made = run_park(monkeypatch, (-45.0, 120.0), 63.0)
+    assert made == [("slide", PARK_SLIDE), ("swing", PARK["base"], PARK["elbow"])]
+
+
+def test_parking_moves_the_elbow_then_the_base_when_one_swing_isnt_allowed(monkeypatch):
+    monkeypatch.setattr(slide_wrist, "swing_refusal", lambda *a, **k: "crosses the camera_tower keep-out")
     made = run_park(monkeypatch, (-45.0, 120.0), 63.0)
     assert made == [("slide", PARK_SLIDE), ("elbow", PARK["elbow"]), ("base", PARK["base"])]
 
@@ -160,10 +171,11 @@ def test_parking_raises_the_slide_fully_before_the_arm_moves(monkeypatch):
 def test_parking_after_a_start_folds_the_elbow_before_the_slides_first_move(monkeypatch):
     made = run_park(monkeypatch, (2.14, 90.46), None)
     assert made == [("elbow", PARK["elbow"]), ("slide", 0.0), ("slide", PARK_SLIDE), ("base", PARK["base"])]
+    # (after a start the wrist hasn't moved, so a swing, which sends all four joints, isn't allowed yet)
 
 
 def test_a_swing_keeps_to_the_limits_and_clear_of_the_tower():
-    assert "elbow" in swing(-50.0, 137.0, 90.0, PARKED, HOVER_SLIDE)
+    assert "elbow" in swing(-50.0, 139.0, 90.0, PARKED, HOVER_SLIDE)
     assert "base" in swing(69.0, 110.0, 90.0, PARKED, HOVER_SLIDE)
     assert "wrist" in swing(-50.0, 97.0, 130.0, PARKED, HOVER_SLIDE)
     assert "keep-out" in swing(40.0, 60.0, 0.0, (0.0, 60.0), HOVER_SLIDE)
@@ -174,7 +186,8 @@ def test_slide_steps_to_the_hover():
     assert slide_steps(-40.0, -40.0) == []
     assert slide_steps(63.0, -50.0) == [-50.0]                    # up from the plate to fully up: one move
     assert slide_steps(-42.0, -40.0) == [-40.0]
-    assert slide_steps(-50.0, 63.0) == [-20.0, 10.0, 40.0, 63.0]  # down: 30 deg steps, as before
+    assert slide_steps(-50.0, 20.0) == [20.0]                     # park to the travel height: one move
+    assert slide_steps(-50.0, 63.0) == [25.0, 63.0]               # down: at most 75 deg a move
     assert slide_steps(0.0, -40.0, 30.0, up_in_one=False) == [-30.0, -40.0]    # the wrist: steps both ways
 
 
@@ -185,8 +198,8 @@ def test_the_first_move_after_a_reset_must_be_to_zero():
 
 
 def test_later_moves_are_small_and_inside_the_safe_range():
-    assert refusal("slide", 30.0, 0.0) is None
-    assert "step" in refusal("slide", 31.0, 0.0)
+    assert refusal("slide", 60.0, -15.0) is None
+    assert "step" in refusal("slide", 60.0, -20.0)                # 80 deg down at once
     assert refusal("slide", -50.0, 63.0) is None                  # up: any distance
     assert "step" in refusal("wrist", -80.0, 110.0)                # the wrist keeps its step both ways
     assert refusal("wrist", 100.0, -60.0) is None
@@ -196,7 +209,7 @@ def test_later_moves_are_small_and_inside_the_safe_range():
 
 def test_arm_moves_stay_in_range_and_clear_of_the_tower():
     assert arm_refusal("base", -45.0, 0.0, 110.0, ARM, ZONES) is None
-    assert "range" in arm_refusal("elbow", 137.0, -45.0, 110.0, ARM, ZONES)
+    assert "range" in arm_refusal("elbow", 139.0, -45.0, 110.0, ARM, ZONES)
     assert "range" in arm_refusal("base", 69.0, 0.0, 110.0, ARM, ZONES)
     assert "keep-out" in arm_refusal("base", 40.0, 0.0, 60.0, ARM, ZONES)
 

@@ -95,6 +95,20 @@ class Arm:
         self.navigator.parked = True
         return ElbowCheck(tuple(landings))
 
+    def joints(self):
+        """(base, elbow) deg, from the potentiometers."""
+        return tuple(float(v) for v in self.bench.read_joints(self.navigator.scara, self.bench.QUICK_READS))
+
+    def move_to(self, base, elbow):
+        """The base and elbow to (base, elbow), lifted and round the tower as needed. Raises ArmError if it can't."""
+        if self.holding:
+            raise ArmError("won't move away holding a resistor: it must go to a bin first")
+        try:
+            if not self.navigator.move_to(base, elbow):
+                raise ArmError(self.navigator.status)
+        except REFUSALS as why:
+            raise ArmError(f"couldn't move to base {base:.1f}, elbow {elbow:.1f}: {why}") from None
+
     def park(self):
         """Out of the camera's view, the slide fully up. Raises ArmError if it can't."""
         if self.holding:

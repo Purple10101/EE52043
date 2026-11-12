@@ -18,7 +18,7 @@ same bins.
 import threading
 import time
 
-from robot_control.task.aim_check import AimCheck, describe
+from robot_control.task.aim_check import AimCheck, camera_aimed, describe_for
 
 CONFIRM_S = 20.0            # a second press of CALIBRATE ARM within this long goes ahead
 BEFORE_START = ("FIRST, with the servo supply OFF, by hand: slide fully up, elbow folded to 100 deg or more, "
@@ -34,7 +34,7 @@ class SortingApp:
         self.confirm_until = 0.0
         self.quitting = False
         self.window.show_arm(self.arm_line())
-        self.window.show_aim(describe() if self.arm else "")
+        self.window.show_aim(describe_for(self.arm) if self.arm else "")
         self.supervisor.update_trays()
         self.window.say("Ready. If the arm has been powered off since it was last started, press CALIBRATE ARM. "
                         "Then LOOK to check the plan, and START to sort."
@@ -90,8 +90,12 @@ class SortingApp:
 
     def check_aim(self):
         """AimCheck: the tip down at 5 points, the shift measured and, if worth it, taken out and saved."""
+        if not camera_aimed(self.arm):
+            self.supervisor.say("CHECK AIM checks the camera calibration, which isn't in use: the arm aims by its CAD "
+                                "geometry (opened with --cad; run without it to use the camera calibration)")
+            return
         AimCheck(self.supervisor.eyes, self.arm).run(say=self.supervisor.say)
-        self.window.show_aim(describe())
+        self.window.show_aim(describe_for(self.arm))
 
     def stop(self):
         if self.job_name == "START" and self.busy:

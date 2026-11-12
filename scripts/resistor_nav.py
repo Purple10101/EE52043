@@ -68,7 +68,7 @@ ACTIONS = ["PLAY", "PICK", "PARK", "OPEN", "CLOSE"]
 DETECT_S = 0.5
 WRIST_CENTRE = 50.0         # jaws are the same turned 180 deg: of the two, the wrist angle nearest this, always
 JAW_LINE_MM = 20.0          # the overlay's reach either side of a body's centroid
-GLIDE_S = 4.0
+GLIDE_S = 3.0               # the approach over a resistor (4.0 until 2026-11-11)
 NUDGE_DEG = 2.0
 NUDGE_S = 0.6
 MARKS = ROOT / "logs" / "jaw_marks.csv"
@@ -76,7 +76,7 @@ NAV_SLIDE = 45.0            # reached going down: the tip about 8.6 mm above the
 NAV_HEIGHT_MM = 8.6
 SLIDE_MOVE_S = 1.0
 BINS = ROOT / "robot_control" / "config" / "bins_real.toml"
-BIN_DEG_PER_S = 20.0        # a long swing takes longer, at a little over the park's base move
+BIN_DEG_PER_S = bench.SWING_DEG_PER_S   # a long swing takes its biggest joint's change at this (20 until 2026-11-11)
 BIN_SLIDE = bench.OVER_PLATE_SLIDE      # the slide's lowest: the tip about 19 mm above a bin's rim, which is below the plate
 BIN_TOLERANCE_DEG = 2.0     # further than this from a target, the gripper stays up
 PICK_SLIDE = bench.OVER_PLATE_SLIDE     # the pick height the user set: the tips about 1 mm above the plate
@@ -122,6 +122,12 @@ class Navigator(threading.Thread):
     def __init__(self, scara, kinematics, rig, correction, gripper=None):
         super().__init__(daemon=True)
         self.scara, self.kinematics, self.rig, self.correction = scara, kinematics, rig, correction
+        # True: picks put the wrist's shaft axis over the body, which is the jaws' centre (gripper v4 CAD).
+        # False: the V tip the camera finds instead (guide.py's tip model, 6.0 mm off the axis).
+        self.aim_axis = True
+        self.wrist_centre = WRIST_CENTRE        # of the wrist angles that line the jaws up, the nearest this
+        self.jaw_offset = None                  # a taught pick calibration's (vision/pick_fit.py), or None
+        self.geometry = "camera"
         self.gripper = gripper      # None: no jaws, so everything but PICK, OPEN and CLOSE still works
         self.holding = False        # a resistor is in the jaws: only a bin is allowed
         self.command = None         # ("go", scene mm) or ("park",)
@@ -168,8 +174,8 @@ class Navigator(threading.Thread):
         gripper lifts first and the arm goes round the tower if it has to. Nothing moves unless the whole
         trip is allowed. The jaws open first. Returns how far off the worse joint landed, deg, or None if
         nothing moved."""
-        base, elbow, wrist = plan_jaws(target, body_deg, bench.SAFE["wrist"], self.kinematics, self.rig, WRIST_CENTRE,
-                                       self.correction, at_axis=True)
+        base, elbow, wrist = plan_jaws(target, body_deg, bench.SAFE["wrist"], self.kinematics, self.rig, self.wrist_centre,
+                                       self.correction, at_axis=self.aim_axis, jaw_offset=self.jaw_offset)
         why = bench.swing_refusal(base, elbow, wrist, (base, elbow), bench.HOVER_SLIDE, self.kinematics.arm, [],
                                   self.kinematics, self.rig)
         if why:
@@ -195,7 +201,7 @@ class Navigator(threading.Thread):
             # from the park, over the non-resistor bin: out over the plate with the slide still fully up, then down
             change = max(abs(base - here[0]), abs(elbow - here[1]))
             bench.swing(self.scara, base, elbow, bench.load_state()["wrist"], max(bench.SWING_S, change / BIN_DEG_PER_S))
-            self.drive("slide", bench.HOVER_SLIDE, SLIDE_MOVE_S)
+            # then straight down to the approach height in the glide: no stop at the travel height on the way
         bench.glide(self.scara, base, elbow, wrist, NAV_SLIDE, GLIDE_S)
         got_base, got_elbow = bench.read_joints(self.scara)
         self.say(f"arrived, about {NAV_HEIGHT_MM:.0f} mm up: base off {got_base - base:+.2f}, elbow off {got_elbow - elbow:+.2f} deg, "
@@ -230,6 +236,25 @@ class Navigator(threading.Thread):
         (self.gripper.open if action == "OPEN" else self.gripper.close)()
         self.say(f"jaws {'open' if action == 'OPEN' else 'closed'}")
 
+    def move_to(self, base, elbow):
+        """The base and elbow to (base, elbow), the gripper lifted to the travel height first if it is lower, round
+        the camera tower if it has to; the wrist as it is. Returns whether it got there. Used to get out of the
+        camera's way without going to the park."""
+        here = bench.read_joints(self.scara, bench.QUICK_READS)
+        path = bin_path([KeepOut(m) for m in KeepOutMap.from_config()], here, (base, elbow))
+        if path is None:
+            self.say(f"CAN'T MOVE TO base {base:.1f}, elbow {elbow:.1f}: no way round the tower")
+            return False
+        self.parked = False
+        self.lift()
+        wrist = bench.load_state()["wrist"]
+        for stop in path:
+            change = max(abs(stop[0] - here[0]), abs(stop[1] - here[1]))
+            if change > 0.1:
+                bench.swing(self.scara, *stop, wrist, max(bench.SWING_S, change / BIN_DEG_PER_S))
+            here = stop
+        return True
+
     def to_bin(self, name, slot):
         """Over a bin at the travel height, the jaws turned so what they hold lies along the slot, then the
         gripper lowered. Nothing moves unless a way there exists, and it only lowers if the arm got there.
@@ -260,8 +285,7 @@ class Navigator(threading.Thread):
         if self.holding:
             self.gripper.open()
             time.sleep(GRIP_SETTLE_S)
-            self.holding = False
-            self.drive("slide", bench.HOVER_SLIDE, SLIDE_MOVE_S)
+            self.holding = False                # the next move lifts first (park: straight to fully up)
             self.say(f"dropped in bin {name}: {off}. PARK to look at the plate again")
             return True
         self.say(f"at bin {name}, lowered: {off}, wrist {wrist:.1f}")

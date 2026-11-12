@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 MISS_MM = 4.0           # a body this close to where the last pick aimed is the one it was meant to take
 MAX_TRIES = 2           # misses at one spot before the run leaves that resistor on the plate
+KNOCKED_MM = 10.0       # a body that turns up new this close to where a pick aimed is the one it pushed away
 
 
 @dataclass
@@ -50,6 +51,10 @@ class PickMemory:
         attempt, self.last = self.last, None
         if attempt is None:
             return None
+        if self._pushed_away(attempt, view):
+            # The jaws pushed it rather than took it (2026-11-11 21:57, a "100" moved 4.6 mm): a miss, though its
+            # spot is empty. It is followed as a new body, to be measured, so there's nothing to retry here.
+            return "missed (pushed away)"
         if not any(_near(r.centre_mm, attempt.spot_mm) for r in view.resistors):
             self.sorted.append(attempt)
             return "sorted"
@@ -59,6 +64,16 @@ class PickMemory:
             self.give_up(spot, f"missed {self.misses[spot]} times")
             return "gave up"
         return "missed"
+
+    @staticmethod
+    def _pushed_away(attempt, view):
+        """Whether a body new since the start-of-run read (it has no reading: "not read this run") lies near
+        where the pick aimed, with nothing left on the spot itself: the picked one, pushed away."""
+        if any(_near(r.centre_mm, attempt.spot_mm) for r in view.resistors):
+            return False
+        return any(getattr(r, "note", "").startswith("not read") and
+                   (r.centre_mm[0] - attempt.spot_mm[0]) ** 2 + (r.centre_mm[1] - attempt.spot_mm[1]) ** 2 <= KNOCKED_MM ** 2
+                   for r in view.resistors)
 
     def give_up(self, spot_mm, why):
         """Leave whatever lies at spot_mm on the plate for the rest of the run."""

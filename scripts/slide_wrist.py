@@ -63,11 +63,15 @@ AXES = {"base": 0, "elbow": 1, "wrist": 2, "slide": 3}
 # Degrees, widened as the real travel is found. The slide's negative angles are up (seen 2026-11-05),
 # as z_max maps to -60; the tip is about 25 mm above the plate at -10, about 0.3 mm a degree.
 SAFE = {"wrist": (-90.0, 120.0), "slide": (-50.0, 63.0)}
-MAX_STEP = {"wrist": 180.0, "slide": 30.0}    # after the first move the firmware ramps them
+MAX_STEP = {"wrist": 180.0, "slide": 75.0}    # after the first move the firmware ramps them
+# The slide's step going down was 30 deg while its travel was being found; 75 since 2026-11-11, for speed:
+# every move costs about 1 s of the firmware's settling on top of its own time, and the descents a cycle
+# makes (park to the travel height, 70; the travel height into a bin, 43) are well above anything they
+# could hit. The last part of a pick, to the plate, is a short step anyway (45 to 63).
 # The slide's step limit is for going down, toward the plate, where it sticks and jumps (approach a height
 # going down). Going up moves away from everything, so it goes in one move: each move costs about 2 s (its
 # time and the firmware's settling), and the climbs in a cycle took 7 moves in 30 deg steps (2026-11-11).
-ELBOW_MAX = 136.0           # the stop is 141; it reached 137.7 on 2026-11-02. SCARA_AUTO_CALIBRATE only measures it to 120
+ELBOW_MAX = 138.0           # the stop is 141; it reached 137.7 on 2026-11-02 (the play build turns round under 139). SCARA_AUTO_CALIBRATE only measures it to 120
 GLIDE_SLIDE = 45.0          # about 9 mm above the plate: a move may cross it this low, clear of a body 2.4 mm tall
 HOVER_SLIDE = 20.0          # the tip about 16 mm above the plate (camera and eye, 2026-11-05): travel height
 OVER_PLATE_SLIDE = 63.0     # the bottom level: the tip almost on the plate, set by eye (2026-11-05). Reach it going down
@@ -81,7 +85,8 @@ PARK_SLIDE = SAFE["slide"][0]   # fully up (the tip roughly 37-40 mm above the p
 BIN_MM = (50.0, (-190.0, -70.0))
 PARK_TOLERANCE_DEG = 1.5
 MOVE_S = 2.0
-SWING_S = 3.0               # a base move across the plate
+SWING_S = 2.0               # a base move across the plate, at the least (3.0 until 2026-11-11)
+SWING_DEG_PER_S = 40.0      # a long swing takes its biggest joint's change at this (the firmware allows 90)
 SLIDE_STEP_S = 1.0
 QUICK_READS = 5             # potentiometer readings for the checks around a move; measuring takes the default
 WRIST_START = -60.0         # the wrist has about 30 deg of play: every target is reached going up from here
@@ -237,7 +242,7 @@ def status(scara):
 
 def start(scara):
     arm = ArmSettings.from_config()
-    quiet(scara.SCARA_INITIALISE, arm.link1, arm.link2, arm.z[0], arm.z[1], SETTLE_S, 1.3, 0.01, 0.001, 1.3, 0.01, 0.001)
+    quiet(scara.SCARA_INITIALISE, arm.link1, arm.link2, arm.z[0], arm.z[1], SETTLE_S, *smc_api.GAINS)
     print("Calibrating: the base and elbow sweep end to end...")
     quiet(scara.SCARA_AUTO_CALIBRATE)
     save_state({"wrist": None, "slide": None, "started": time.strftime("%Y-%m-%d %H:%M")})
@@ -265,6 +270,8 @@ def move(scara, joint, angle, seconds):
     if joint in SAFE:
         state[joint] = angle
         save_state(state)
+    # Read after every move, the slide's and wrist's too: whether the base and elbow shift while the gripper
+    # goes down and grips is evidence for misses (2026-11-11 21:57).
     base, elbow = read_joints(scara, QUICK_READS)
     record(joint, angle, seconds, base, elbow)
     print(f"{joint} to {angle:g}: base {base:.2f}, elbow {elbow:.2f} deg")
@@ -377,19 +384,31 @@ def slide_steps(last, target, step=MAX_STEP["slide"], up_in_one=True):
 def park(scara):
     """To PARK from wherever the arm is, in the order the plate, the tower and the non-resistor bin allow: the
     slide fully up before anything else moves (after a start, the elbow first, out of the tower's
-    keep-out to where the slide's first move may be made)."""
+    keep-out to where the slide's first move may be made). Then the base and elbow together in one swing
+    if every check allows it (a move fewer, about 5 s), else the elbow and then the base."""
     state = load_state()
     if state is None:
         sys.exit("Not started: run start first.")
-    if state["slide"] is None and abs(read_joints(scara)[1] - PARK["elbow"]) > PARK_TOLERANCE_DEG:
+    if state["slide"] is None and abs(read_joints(scara, QUICK_READS)[1] - PARK["elbow"]) > PARK_TOLERANCE_DEG:
         move(scara, "elbow", PARK["elbow"], MOVE_S)
     for angle in slide_steps(state["slide"], PARK_SLIDE):
         move(scara, "slide", angle, 1.0 if state["slide"] is None and angle == 0 else SLIDE_STEP_S)
-    if abs(read_joints(scara)[1] - PARK["elbow"]) > PARK_TOLERANCE_DEG:
+    base, elbow = read_joints(scara, QUICK_READS)
+    wrist = load_state()["wrist"]
+    if abs(elbow - PARK["elbow"]) > PARK_TOLERANCE_DEG and abs(base - PARK["base"]) > PARK_TOLERANCE_DEG \
+            and wrist is not None:
+        arm = ArmSettings.from_config()
+        why = swing_refusal(PARK["base"], PARK["elbow"], wrist, (base, elbow), PARK_SLIDE, arm,
+                            [KeepOut(m) for m in KeepOutMap.from_config()], Kinematics(arm), RigSettings.from_config())
+        if why is None:
+            change = max(abs(PARK["base"] - base), abs(PARK["elbow"] - elbow))
+            swing(scara, PARK["base"], PARK["elbow"], wrist, max(SWING_S, change / SWING_DEG_PER_S))
+            base, elbow = read_joints(scara, QUICK_READS)
+    if abs(elbow - PARK["elbow"]) > PARK_TOLERANCE_DEG:
         move(scara, "elbow", PARK["elbow"], MOVE_S)
-    if abs(read_joints(scara)[0] - PARK["base"]) > PARK_TOLERANCE_DEG:
+    if abs(read_joints(scara, QUICK_READS)[0] - PARK["base"]) > PARK_TOLERANCE_DEG:
         move(scara, "base", PARK["base"], SWING_S)
-    base, elbow = read_joints(scara)
+    base, elbow = read_joints(scara, QUICK_READS)
     print(f"Parked: base {base:.2f}, elbow {elbow:.2f} deg, slide {load_state()['slide']:g}")
 
 

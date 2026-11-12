@@ -54,10 +54,12 @@ class FakeTracker:
 def eyes_with(tracker, camera=None):
     eyes = Eyes.__new__(Eyes)            # no models or real camera
     eyes.cap, eyes.tracker = camera or CountingCamera(), tracker
+    eyes.focus, eyes.focus_note, eyes.last_outlines = None, "", []
     return eyes
 
 
-def test_a_look_averages_fresh_frames_once_the_plate_and_exposure_have_settled():
+def test_a_look_averages_fresh_frames_once_the_plate_and_exposure_have_settled(monkeypatch):
+    monkeypatch.setattr(eyes_mod, "focus_api", None)        # the focus check has its own tests
     eyes = eyes_with(FakeTracker(found_at=3, settles_at=5))
     frame, cal = eyes._picture()
     # frames 0-4 go to the tracker (settled on the 5th), 5 to 5 + SETTLE - 1 are dropped, then the next 8
@@ -69,7 +71,8 @@ def test_a_look_averages_fresh_frames_once_the_plate_and_exposure_have_settled()
     assert eyes.cap.i == first + AVERAGE_FRAMES - 1      # nothing read beyond the average
 
 
-def test_a_camera_that_cant_be_set_needs_only_the_plate():
+def test_a_camera_that_cant_be_set_needs_only_the_plate(monkeypatch):
+    monkeypatch.setattr(eyes_mod, "focus_api", None)        # the focus check has its own tests
     eyes = eyes_with(FakeTracker(found_at=2, control=False))
     frame, _ = eyes._picture()
     first = 2 + closeup.SETTLE
@@ -96,12 +99,13 @@ def test_averaging_takes_out_noise():
     assert mean.std() < one.std() / 2          # 8 frames: noise down by about the square root of 8
 
 
-# Following bodies from look to look (BodyMemory), and their close-ups
+# Following bodies from look to look (BodyMemory), and the values read once at the start of a run
 
 from robot_offline.post.bands import learned  # noqa: E402
 
 from robot_control.vision import eyes as eyes_mod  # noqa: E402
 from robot_control.vision.body_memory import GONE_LOOKS, BodyMemory  # noqa: E402
+from robot_control.vision.eyes import combine  # noqa: E402
 
 
 def scores_for(ohms, strength):
@@ -111,18 +115,22 @@ def scores_for(ohms, strength):
     return s
 
 
+def at(x, y, score=0.9, direction=30.0):
+    return ((x, y), score, direction)
+
+
 def test_a_new_body_needs_the_confidence_and_a_known_one_counts_while_found_at_all():
-    memory = BodyMemory(0.7, conf=0.5)
-    assert memory.match([((0.0, -130.0), 0.3)]) == [None]                   # new and faint: not a body
-    first = memory.match([((0.0, -130.0), 0.9), ((30.0, -150.0), 0.8)])
+    memory = BodyMemory(conf=0.5)
+    assert memory.match([at(0.0, -130.0, 0.3)]) == [None]                   # new and faint: not a body
+    first = memory.match([at(0.0, -130.0), at(30.0, -150.0, 0.8)])
     assert None not in first and first[0] != first[1]
-    again = memory.match([((0.6, -130.4), 0.2), ((30.0, -150.0), 0.8)])     # its score dipped: still that body
+    again = memory.match([at(0.6, -130.4, 0.2), at(30.0, -150.0, 0.8)])     # its score dipped: still that body
     assert again == first
 
 
 def test_a_body_found_nowhere_is_missing_then_gone():
-    memory = BodyMemory(0.7)
-    (a,) = memory.match([((0.0, -130.0), 0.9)])
+    memory = BodyMemory()
+    (a,) = memory.match([at(0.0, -130.0)])
     memory.match([])
     assert [b.id for b in memory.missing()] == [a]
     for _ in range(GONE_LOOKS - 1):
@@ -131,38 +139,61 @@ def test_a_body_found_nowhere_is_missing_then_gone():
 
 
 def test_a_picked_body_not_found_next_look_is_gone_at_once():
-    memory = BodyMemory(0.7)
-    a, b = memory.match([((0.0, -130.0), 0.9), ((30.0, -150.0), 0.9)])
+    memory = BodyMemory()
+    a, b = memory.match([at(0.0, -130.0), at(30.0, -150.0)])
     memory.picked_near((0.5, -129.5))
-    memory.match([((30.0, -150.0), 0.9)])
+    memory.match([at(30.0, -150.0)])
     assert memory.missing() == [] and [x.id for x in memory.bodies] == [b]     # not waited for
 
 
 def test_a_failed_pick_leaves_the_same_body_even_if_it_now_scores_faint():
-    memory = BodyMemory(0.7, conf=0.5)
-    (a,) = memory.match([((0.0, -130.0), 0.9)])
+    memory = BodyMemory(conf=0.5)
+    (a,) = memory.match([at(0.0, -130.0)])
     memory.picked_near((0.0, -130.0))
-    assert memory.match([((0.8, -130.6), 0.12)]) == [a]                        # disturbed, faint: still there
+    assert memory.match([at(0.8, -130.6, 0.12)]) == [a]                     # disturbed, faint: still there
     assert not memory.bodies[0].picked
 
 
-def test_one_looks_slip_cant_flip_a_reading_on_its_own():
-    memory = BodyMemory(0.7)
-    (a,) = memory.match([((0.0, -130.0), 0.9)])
-    unsure = np.zeros(2 * len(learned._OHMS))           # a look that says nothing
-    assert memory.read(a, unsure).value is None
-    memory.match([((0.0, -130.0), 0.9)])
-    wrong = memory.read(a, scores_for(10.0, 12.0))      # then a confident 10 ohm on its own: it would pass alone
-    assert learned.decode(scores_for(10.0, 12.0), 0.7).value == 10.0
-    assert wrong.value is None                          # averaged with the unsure look, it doesn't
+def test_a_body_keeps_the_value_it_was_read_as_while_it_stays_where_it_was():
+    memory = BodyMemory()
+    (a,) = memory.match([at(0.0, -130.0, direction=30.0)])
+    memory.set_reading(a, learned.decode(scores_for(1000.0, 12.0), 0.9))
+    for _ in range(3):                                                    # later looks: no reading, value kept
+        memory.match([at(0.5, -130.5, direction=40.0)])
+    assert memory.reading(a).value == 1000.0 and memory.why_no_value(a) == ""
 
 
-def test_the_close_up_is_pinned_into_the_reading():
-    memory = BodyMemory(0.7)
-    (a,) = memory.match([((0.0, -130.0), 0.9)])
-    memory.pin_closeup(a, scores_for(1000.0, 12.0))
-    assert memory.has_closeup(a)
-    assert memory.read(a, scores_for(1000.0, 12.0)).value == 1000.0
+def test_a_body_turned_or_shifted_since_its_read_is_to_be_measured():
+    memory = BodyMemory()
+    (a,) = memory.match([at(0.0, -130.0, direction=30.0)])
+    memory.set_reading(a, learned.decode(scores_for(1000.0, 12.0), 0.9))
+    memory.match([at(1.0, -130.0, direction=60.0)])                      # knocked round 30 degrees
+    assert memory.reading(a) is None and memory.why_no_value(a) == "moved since it was read"
+    (b,) = memory.match([at(10.0, -130.0)])                               # knocked 10 mm: a new body
+    assert b != a and memory.why_no_value(b).startswith("not read this run")
+
+
+def test_a_long_axis_has_no_head_or_tail():
+    memory = BodyMemory()
+    (a,) = memory.match([at(0.0, -130.0, direction=5.0)])
+    memory.set_reading(a, learned.decode(scores_for(1000.0, 12.0), 0.9))
+    memory.match([at(0.0, -130.0, direction=178.0)])                     # 7 degrees round, not 173
+    assert memory.reading(a) is not None
+
+
+def test_an_unsure_read_is_to_be_measured():
+    memory = BodyMemory()
+    (a,) = memory.match([at(0.0, -130.0)])
+    memory.set_reading(a, learned.decode(np.zeros(2 * len(learned._OHMS)), 0.9))
+    assert memory.reading(a).value is None and memory.why_no_value(a) == "unsure"
+
+
+def test_the_two_views_are_averaged_when_they_agree_and_the_close_up_wins_when_not():
+    agree = combine(scores_for(1000.0, 9.0), scores_for(1000.0, 9.0), 0.9)
+    assert agree.value == 1000.0
+    disagree = combine(scores_for(10.0, 12.0), scores_for(1000.0, 9.0), 0.9)    # the main capture says 10R
+    assert disagree.best == 1000.0                                                # the close-up's focus is fresh
+    assert combine(scores_for(470.0, 12.0), None, 0.9).value == 470.0             # no close-up: the main alone
 
 
 class Model:
@@ -187,47 +218,129 @@ class Crop:
         self.image = image
 
 
-def eyes_for_closeups(monkeypatch, taken):
-    def take(cap, cal, polygons, seg=None, grey=False, camera=None):
-        taken.append(list(polygons))
+def test_the_read_sweeps_the_focus_then_takes_close_ups_by_the_fresh_rule(monkeypatch):
+    done = {}
+
+    def calibrate(cap, cal, polygons, camera=None):
+        done["swept"] = list(polygons)
+        return [(240.0, 318.0), (270.0, 300.0)], None
+
+    def take(cap, cal, polygons, seg=None, grey=False, model=None, camera=None, offset=None):
+        done["model"] = model
         return [Take(Crop(f"close {p}"), 200.0) for p in polygons]
 
+    monkeypatch.setattr(eyes_mod.closeup, "calibrate", calibrate)
     monkeypatch.setattr(eyes_mod.closeup, "take", take)
-    monkeypatch.setattr(eyes_mod.learned, "log_probs", lambda net, image, white: np.zeros(2 * len(learned._OHMS)))
+    monkeypatch.setattr(eyes_mod.learned, "log_probs", lambda net, image, white: f"lp {image}")
     eyes = Eyes.__new__(Eyes)
     eyes.detector, eyes.reader, eyes.cap, eyes.camera = Detector(), "net", None, {}
-    eyes.closeups_on, eyes.say, eyes.closeup_crops = True, lambda text: None, {}
-    eyes.memory = BodyMemory(0.7)
-    return eyes
-
-
-def test_only_bodies_without_a_close_up_get_one(monkeypatch):
-    taken = []
-    eyes = eyes_for_closeups(monkeypatch, taken)
-    ids = eyes.memory.match([((0.0, -100.0), 0.9), ((30.0, -150.0), 0.9)])
-    eyes._closeups("cal", [(("p1", 0.9, None, (0.0, -100.0)), ids[0]), (("p2", 0.9, None, (30.0, -150.0)), ids[1])])
-    assert taken == [["p1", "p2"]] and eyes.closeup_crops[ids[0]] == "close p1"
-    ids2 = eyes.memory.match([((30.0, -150.0), 0.9), ((-30.0, -120.0), 0.9)])   # p1 gone, p3 new
-    eyes._closeups("cal", [(("p2", 0.9, None, (30.0, -150.0)), ids2[0]), (("p3", 0.9, None, (-30.0, -120.0)), ids2[1])])
-    assert taken[1] == ["p3"]
-    eyes._closeups("cal", [(("p2", 0.9, None, (30.0, -150.0)), ids2[0])])
-    assert len(taken) == 2                              # nothing new: no close-ups, a quick look
+    eyes.closeups_on, eyes.say, eyes.focus = True, lambda text: None, None
+    got = eyes._closeups("cal", ["p1", "p2"])
+    assert done["swept"] == ["p1", "p2"]
+    assert done["model"].focus(240.0) == 318 and done["model"].focus(270.0) == 300     # fitted to the sweep
+    assert got == [("lp close p1", "close p1"), ("lp close p2", "close p2")]
 
 
 def test_close_ups_can_be_turned_off(monkeypatch):
     monkeypatch.setattr(eyes_mod.closeup, "take", lambda *a, **k: pytest.fail("no close-ups wanted"))
+    monkeypatch.setattr(eyes_mod.closeup, "calibrate", lambda *a, **k: pytest.fail("no sweep wanted"))
     eyes = Eyes.__new__(Eyes)
-    eyes.closeups_on, eyes.memory = False, BodyMemory(0.7)
-    eyes._closeups("cal", [(("p1", 0.9, None, (0.0, -100.0)), 1)])
+    eyes.closeups_on = False
+    assert eyes._closeups("cal", ["p1"]) == [(None, None)]
 
 
 def test_the_sorting_runs_read_limit_is_its_own():
     from robot_control.config import VisionSettings
-    assert VisionSettings.from_config().min_confidence == 0.9          # vision.toml, chosen 2026-11-11
-    memory = BodyMemory(0.9)
-    (a,) = memory.match([((0.0, -130.0), 0.9)])
-    # 0.82 on 470R, as body 6 (a 4k7) read: decode shares exp(score) over every value both ways round.
+    limit = VisionSettings.from_config().min_confidence
+    assert limit == 0.7                                                 # vision.toml (0.9 for a while on 2026-11-11)
+    # 0.82, as body 6 (a 4k7) read 470R: decode shares exp(score) over every value both ways round.
     others = 2 * len(learned._OHMS) - 1
-    s = scores_for(470.0, float(np.log((0.82 * others - 1) / 0.18)))
-    reading = memory.read(a, s)
-    assert 0.75 < reading.confidence < 0.9 and reading.value is None    # held back at 0.9; at 0.7 it passed
+    scores = scores_for(470.0, float(np.log((0.82 * others - 1) / 0.18)))
+    assert combine(scores, None, limit).value == 470.0                  # trusted at 0.7
+    assert combine(scores, None, 0.9).value is None                     # held back at 0.9
+
+
+# Focus before every capture (robot_offline's FocusTracker, once pre/focus.py exists)
+
+class FakeFocusTracker:
+    """robot_offline's planned pre/focus.FocusTracker, as its handoff specifies it."""
+    made, checks = 0, []
+
+    def __init__(self, cap, cal):
+        FakeFocusTracker.made += 1
+        self.cap = cap
+
+    def check(self, polygons=None):
+        FakeFocusTracker.checks.append(self.cap.i)          # how many frames had been read when it ran
+        FakeFocusTracker.references = polygons
+
+    def status(self):
+        return "focus 331 (+8), checked 0 s ago"
+
+
+class FakeFocusApi:
+    FocusTracker = FakeFocusTracker
+
+
+def test_every_capture_is_taken_right_after_a_focus_check(monkeypatch):
+    monkeypatch.setattr(eyes_mod, "focus_api", FakeFocusApi)
+    FakeFocusTracker.made, FakeFocusTracker.checks = 0, []
+    eyes = eyes_with(FakeTracker(found_at=2, control=False))
+    eyes.focus, eyes.focus_note = None, ""
+    eyes._picture()
+    first_capture_ends = eyes.cap.i
+    eyes.tracker.seen = 0                                   # a second capture, the plate already found
+    eyes._picture()
+    assert FakeFocusTracker.made == 1                       # one tracker for the session
+    assert len(FakeFocusTracker.checks) == 2                # a check before each capture
+    assert FakeFocusTracker.checks[0] == 1                  # straight after the plate was found, before the average
+    assert FakeFocusTracker.checks[1] > first_capture_ends
+    assert eyes.focus_note.startswith("focus 331")
+
+
+def test_without_robot_offlines_focus_check_captures_stay_at_the_fixed_focus(monkeypatch):
+    monkeypatch.setattr(eyes_mod, "focus_api", None)
+    eyes = eyes_with(FakeTracker(found_at=2, control=False))
+    eyes.focus, eyes.focus_note = None, eyes_mod.NO_FOCUS_CHECK
+    eyes._picture()
+    assert eyes.focus is None and "no focus check" in eyes.focus_note
+
+
+def test_with_a_focus_check_the_close_ups_need_no_sweep(monkeypatch):
+    monkeypatch.setattr(eyes_mod.closeup, "calibrate", lambda *a, **k: pytest.fail("no sweep with a focus check"))
+    used = {}
+
+    def take(cap, cal, polygons, seg=None, grey=False, model=None, camera=None, offset=None):
+        used["model"], used["offset"] = model, offset
+        return [Take(Crop("c"), 200.0) for _ in polygons]
+
+    monkeypatch.setattr(eyes_mod.closeup, "take", take)
+    monkeypatch.setattr(eyes_mod.learned, "log_probs", lambda net, image, white: "lp")
+    eyes = Eyes.__new__(Eyes)
+    eyes.detector, eyes.reader, eyes.cap, eyes.camera = Detector(), "net", None, {}
+    tracker = FakeFocusTracker.__new__(FakeFocusTracker)
+    tracker.offset = 8.0
+    eyes.closeups_on, eyes.say, eyes.focus = True, lambda text: None, tracker
+    eyes._closeups("cal", ["p1"])
+    assert used["model"] is None and used["offset"] == 8.0  # closeup.take's own rule, plus the check's offset
+
+
+def test_a_runs_looks_recheck_focus_only_now_and_then_but_the_read_always(monkeypatch):
+    monkeypatch.setattr(eyes_mod, "focus_api", FakeFocusApi)
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(eyes_mod.time, "monotonic", lambda: clock["now"])
+    FakeFocusTracker.made, FakeFocusTracker.checks = 0, []
+    eyes = eyes_with(FakeTracker(found_at=1, control=False))
+    eyes.focus, eyes.focus_note, eyes.focus_checked_at = None, "", None
+
+    def picture(sharp):
+        eyes.tracker.seen = 0
+        eyes._picture(sharp)
+        return len(FakeFocusTracker.checks)
+
+    assert picture(False) == 1                              # never checked yet: checks
+    clock["now"] += 30.0
+    assert picture(False) == 1                              # a look 30 s later: no check, the focus kept
+    assert picture(True) == 2                               # the start-of-run read: always checks
+    clock["now"] += eyes_mod.FOCUS_RECHECK_S + 1
+    assert picture(False) == 3                              # stale: checks again

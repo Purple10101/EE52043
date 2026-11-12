@@ -41,10 +41,12 @@ FONT = cv2.FONT_HERSHEY_SIMPLEX
 
 
 class RunWindow:
-    def __init__(self, title=TITLE, rig_map=None, monitor=None):
+    def __init__(self, title=TITLE, rig_map=None, monitor=None, buttons=BUTTONS):
         """rig_map: task.RigMap, drawn under the tray list to show where each bin is; None for no map.
-        monitor: hardware.ArmMonitor, to draw the arm on the map as it moves; None to leave it out."""
+        monitor: hardware.ArmMonitor, to draw the arm on the map as it moves; None to leave it out.
+        buttons: the button bar's names, left to right."""
         self.title = title
+        self.buttons = list(buttons)
         self.rig_map = rig_map
         self.monitor = monitor
         self._lock = threading.Lock()
@@ -105,7 +107,7 @@ class RunWindow:
         click, self._click = self._click, None
         if click is None or click[1] < STATUS_H + PLATE_PX:
             return None
-        name = BUTTONS[min(click[0] * len(BUTTONS) // size[0], len(BUTTONS) - 1)]
+        name = self.buttons[min(click[0] * len(self.buttons) // size[0], len(self.buttons) - 1)]
         return name if name in enabled else None
 
     def close(self):
@@ -133,7 +135,7 @@ class RunWindow:
             right = np.vstack([draw_trays(self._trays, self._target, height - where.shape[0]), where])
         else:
             right = draw_trays(self._trays, self._target, height)
-        return np.vstack([np.hstack([left, right]), draw_buttons(width, enabled)])
+        return np.vstack([np.hstack([left, right]), draw_buttons(width, enabled, self.buttons)])
 
 
 def draw_plate(view, plan):
@@ -181,14 +183,15 @@ def draw_trays(trays, target, height):
         col, row = columns.index(t.bin_id[0]), [u.bin_id for u in trays if u.bin_id[0] == t.bin_id[0]].index(t.bin_id)
         x0, y0 = 6 + col * box_w, top + row * box_h
         x1, y1 = x0 + box_w - 6, y0 + box_h - 6
-        has = t.count > 0 or t.value_ohm is not None
+        label = getattr(t, "label", "")
+        has = t.count > 0 or t.value_ohm is not None or bool(label)
         fill = (40, 70, 40) if has else (45, 45, 45)
         cv2.rectangle(panel, (x0, y0), (x1, y1), fill, -1)
         if t.bin_id == target:
             cv2.rectangle(panel, (x0, y0), (x1, y1), WILL_PICK, 5)
         cv2.putText(panel, t.bin_id, (x0 + 10, y0 + 30), FONT, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
-        main = ohms_text(t.value_ohm) if t.value_ohm is not None else "empty"
-        cv2.putText(panel, main, (x0 + 10, y0 + box_h // 2 + 12), FONT, 1.2,
+        main = label or (ohms_text(t.value_ohm) if t.value_ohm is not None else "empty")
+        cv2.putText(panel, main, (x0 + 10, y0 + box_h // 2 + 12), FONT, 0.7 if label else 1.2,
                     (255, 255, 255) if has else (130, 130, 130), 2, cv2.LINE_AA)
         count = f"{t.count} in"
         (count_w, _), _ = cv2.getTextSize(count, FONT, 0.8, 2)
@@ -196,10 +199,10 @@ def draw_trays(trays, target, height):
     return panel
 
 
-def draw_buttons(width, enabled):
+def draw_buttons(width, enabled, buttons=BUTTONS):
     bar = np.full((BUTTON_H, width, 3), 20, np.uint8)
-    for i, name in enumerate(BUTTONS):
-        x0, x1 = i * width // len(BUTTONS) + 6, (i + 1) * width // len(BUTTONS) - 6
+    for i, name in enumerate(buttons):
+        x0, x1 = i * width // len(buttons) + 6, (i + 1) * width // len(buttons) - 6
         live = name in enabled
         colour = ((40, 40, 170) if name == "STOP" else (60, 150, 60)) if live else (60, 60, 60)
         cv2.rectangle(bar, (x0, 10), (x1, BUTTON_H - 10), colour, -1)

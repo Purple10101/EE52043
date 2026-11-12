@@ -4,39 +4,47 @@ Project workspace for the EE52043 robot coursework.
 
 ## Running the sorter
 
-One window sorts the resistors on the plate into the trays, from power-on to an empty plate. Run every
+Two buttons, always in the same order: **CALIBRATE** on an empty plate, then **START** on a full one. Run every
 command from the `EE52043` folder.
 
-1. **Plug in** the camera, the gripper board and the Nucleo (USB), then the servo supply (5 V). Keep a
-   hand on the servo supply's plug whenever the arm moves: unplugging it is the emergency stop.
-2. **Open the window:**
+1. **Plug in** the camera, the gripper board and the Nucleo (USB). Keep a hand on the servo supply's plug
+   whenever the arm moves: unplugging it is the emergency stop.
+2. **After a power-on, set the arm by hand** with the servo supply off: slide fully up, elbow folded to 100
+   degrees or more, gripper turned away from the camera tower. Then switch the supply on (5 V).
+3. **Open the window** (about 20 seconds to load the models and open the camera; nothing else may use it):
 
    ```
-   .venv\Scripts\python scripts\sort_resistors.py
+   .venv\Scripts\python scripts\sort_resistors_auto.py
    ```
 
-   It takes about 20 seconds to load the models and open the camera. Nothing else may be using the camera.
-3. **After any power-off of the Nucleo, calibrate the arm.** The window shows when the arm was last
-   started; the program can't tell if the power has been off since, so if in doubt, calibrate. Press
-   **CALIBRATE ARM** once and it lists what to do by hand first: with the servo supply off, slide fully
-   up, elbow folded to 100 degrees or more, gripper turned away from the camera tower, plate clear. Then
-   switch the supply on and press **CALIBRATE ARM** again within 20 s. It ends with an elbow check: "good"
-   carries on; "BAD" means something dragged on the arm, so free the cables and calibrate again.
-4. **Check the aim, at the start of every session and whenever the rig has moved.** With the plate clear,
-   press **CHECK AIM**. The arm puts its closed tip down at five points and the camera measures where it
-   really went. A steady shift (carrying the rig shifts the arm against the plate) is taken out of the
-   calibration and saved. The status line then says how far off it was and how far off it is now. If it says
-   to redo the full calibration, follow "Calibrating the system" below. Why this matters:
-   `experiments/2026-11-11_pick_error_pipeline/` (on this PC), where a 2.8 mm shift made a pick miss.
-5. **Lay the resistors on the plate**, keeping the crosshair in the middle clear, and press **LOOK**. Each
-   resistor is outlined: green is the next pick, orange is picked later, grey stays on the plate (the label
-   says why: unsure of its value, outside 10 ohm to 10 kohm, ...). Nothing moves.
-6. **Press START.** The arm picks, drops and parks, looking at the plate again after every pick. The
-   **TRAYS** list shows which value each bin holds and how many have gone in, and **WHERE THE BINS ARE**
-   shows the rig from above with each slot labelled and the arm moving as it does. Each value keeps its
-   bin until the window is closed, even across STOP and START.
-7. **STOP** ends the run once the arm is parked again. The run ends by itself when nothing is left that
-   it can sort. Press **q** to close the window once nothing is running.
+   Add `--unclassified-bin B4` (any bin) to pick resistors whose value couldn't be read, or is outside
+   the sorter's 10 ohm to 10 kohm range, into that bin instead of leaving them on the plate. That bin is then never given a value.
+
+4. **With the plate empty, press CALIBRATE.** Three steps, each checked before the next
+   (`robot_control/task/auto_app.py`). If one doesn't pass it stops and says why and what to do:
+   1. the arm started (the base and elbow sweep end to end) and the elbow checked (105, 110, 115, each within
+      1 degree);
+   2. the plate found and checked to be empty, the arm parked out of view;
+   3. the aim checked: the closed tip down at five points, and any steady shift between the arm and the plate
+      (carrying the rig causes one) taken out of the calibration and saved.
+
+   START stays greyed out until CALIBRATE has passed in this window.
+5. **Lay the resistors on the plate**, keeping the crosshair in the middle clear, and **press START.** First it
+   reads every resistor's value, once: a focus sweep over the parts (about 25 s), then a close-up of each
+   (about 1.5 s a part). Keep hands out of view. Then the arm picks, drops and parks, looking at the plate
+   again after every pick, until nothing is left that it can sort.
+   - **The plate view:** each resistor is outlined: green is the next pick, orange is picked later, grey stays
+     on the plate (the label says why: "measure" for one with no trusted value, outside 10 ohm to 10 kohm, ...).
+   - **TRAYS:** which value each bin holds and how many have gone in.
+   - **WHERE THE BINS ARE:** the rig from above, each slot labelled, and the arm moving as it does.
+
+   Each value keeps its bin until the window is closed. For another batch, lay it out and press START again.
+6. **STOP** ends a run once the arm is parked again. Press **q** to close the window once nothing is running.
+   CALIBRATE again if the Nucleo loses power or the rig is moved or knocked.
+
+**The manual window**, `.venv\Scripts\python scripts\sort_resistors.py`, has the same picture with every step
+on its own button (CALIBRATE ARM, CHECK AIM, LOOK, START, STOP), in any order: for testing and for finding out
+what went wrong. `--look-only` opens the camera alone.
 
 Every session (window opened) is logged in `logs/sort_runs/<time>/`:
 - `events.csv`: what happened;
@@ -49,22 +57,50 @@ Every session (window opened) is logged in `logs/sort_runs/<time>/`:
 When a resistor is misread or missed, that folder is the evidence to send to robot_offline's band-reading or
 segmentation session. `experiments/2026-11-11_full_run_8/` (on this PC) is the first run's investigation.
 
-**A value is trusted at 0.9 confidence or more** (`robot_control/config/vision.toml`, `min_confidence`); under it the
-resistor stays on the plate as "unsure". On 2026-11-11, at 0.7, a 4k7 read as 470R would have been sorted wrong.
+**A value is trusted at 0.7 confidence or more** (`robot_control/config/vision.toml`, `min_confidence`); under it the
+resistor is to be measured. It was 0.9 for a while on 2026-11-11, after a 4k7 read as 470R at 0.82 without the
+focus check (`experiments/2026-11-11_full_run_8`, section 6); back to 0.7 now that every capture's focus is
+checked. Watch for factor-of-ten misreads, and raise it again if they come back.
 
-**Each resistor is followed from look to look.** Its reading is averaged over its last few looks and its
-close-up, so one bad look can't flip it. A resistor seen before but missing from a look gets a dashed
-"missed?" ring, and the run looks again rather than end. A pick the jaws missed is picked again.
+**Movement** (`scripts/slide_wrist.py`, `scripts/resistor_nav.py`): the slide climbs in one move and goes down in
+moves of at most 75 degrees; from the park the arm swings out fully up and glides straight down to the approach;
+it parks in one swing when the checks allow it; long swings run at 40 deg/s. Between picks it doesn't park: after a
+drop into an A slot the camera looks from there (the arm hides none of the plate), and after a B slot the arm swings
+over A2 first (`robot_control/vision/occlusion.py`). During a run, focus is re-checked only every 90 s; the
+start-of-run read always checks. Where the time goes, and why some
+moves look jerky: `experiments/2026-11-11_run_speed_smoothness/` (on this PC).
 
-**Without the arm:** `.venv\Scripts\python scripts\sort_resistors.py --look-only` opens the camera alone
-(LOOK only), to check what it sees.
+**Values are read once per run; resistors are found on every look.** The camera's focus drifts while it is in
+use (about 4 settings a minute), and the bands need it sharp, so the band reader runs once, at START, straight
+after a focus sweep (robot_offline's handoff `2026-11-11_ee52043_read_once_plan.md`). Segmentation runs every
+time the arm is parked, and each resistor is followed by where it lies. A resistor keeps its value while it
+stays where it was read (within 3 mm and 15 degrees).
+
+**Focus before every capture** (robot_offline's handoff `2026-11-11_ee52043_focus_before_capture.md`): the lens
+drifts as the camera warms, so every capture should follow a focus check on the plate's centre cross. The code
+calls robot_offline's `FocusTracker` (`pre/focus.py`, landed 2026-11-11) before each capture. The first check is a
+full search (about 16 s on the rig), each later one about 3.5 s. If the cross is covered, a body near the centre
+stands in. Close-ups use the check's offset, so START needs no focus sweep of its own. With the check, segmentation
+found 8 of 8 kit parts against 5 of 8 at the old fixed focus. Each look's focus state is in the run's `events.csv`.
+
+**"Measure"** marks a resistor with no trusted value, for the ohmmeter once there is one (until then it stays on
+the plate). That covers three cases:
+- unsure at the read (under 0.7);
+- knocked since the read;
+- not there at the read: missed by segmentation, or uncovered later.
+
+A resistor seen before but missing from a look gets a dashed "missed?" ring, and the run looks again rather than
+end. A pick the jaws missed is followed, and picked again.
 
 **If something is wrong:**
 
 - *The plate isn't found:* clear the crosshair. In the lab a pale bench behind the far edge can hide it; a
   matte black strip along that edge helps. See "Calibrating the system" below.
-- *A pick misses, or "3 picks in a row came to nothing":* the arm isn't going where the camera says. Press
-  CHECK AIM. If it says more than a shift is wrong, do the full calibration ("Calibrating the system").
+- *A pick misses, or "3 picks in a row came to nothing":* the arm isn't going where the camera says. Clear
+  the plate and CALIBRATE again (CHECK AIM in the manual window). If the aim check fails, do the full
+  calibration ("Calibrating the system").
+- *CALIBRATE fails:* it says which step and what to do. Elbow check bad: something dragged on the arm; free
+  the cables, set the arm by hand again. Plate not empty: clear it. Aim check failed: the full calibration.
 - *A pick is counted as sorted but wasn't:* the run judges a pick only by the resistor's spot being empty
   at the next look (the gripper can't feel what it holds). Don't touch the plate during a run.
 - *Stopped holding a resistor it couldn't drop:* the arm is left where it is, the jaws still gripping.
@@ -89,11 +125,12 @@ The details of each part are under "The sorting run" below.
   machine vision). See `course_files/README.md`.
 - `firmware/` - the motion controller firmware flashed on the arm: the course's Moodle build
   (`servo_motion_controller.zip`, with the DEMO switch), this arm's potentiometer calibration in
-  `potentiometers.c`, and finer control with the same serial protocol: 0.1 us PWM ticks, potentiometers
-  averaged over a PWM period, and proportional settling (`settle.c`, tested on a PC by `test/settle_test.c`).
-  Set up by `course_files/lab_scripts/RobotSetup.md`. Builds with CMake and the
-  Arm GNU Toolchain (`cmake -S firmware -B firmware/build -G Ninja`, then `cmake --build firmware/build`);
-  flash by copying `firmware/build/servo_motion_controller.bin` to the Nucleo's drive.
+  `potentiometers.c`, and smoother, finer control with the same serial protocol. One source, two builds: the
+  standard build (`firmware/build/`) and the play build (`firmware/build_play/`, `-DSCARA_PLAY=ON`), which
+  approaches every base/elbow target from one side to work round the joints' play. Since 2026-11-12 the host
+  must send matching settings (`TIME_SCALE`, `GAINS` in `hardware_api/scara_motion_controller_api.py`).
+  **See `firmware/README.md`** for building, flashing, what changed from the course firmware and why, and the
+  play build.
 - `gripper_firmware/` - the gripper's ESP32-S3 sketch: limits, ramps and calibration for its SG90. Build with
   the Arduino IDE (board XIAO_ESP32S3, signal on D7).
 - `scripts/` - bench tools for the real arm: `pot_check.py` and `pot_calibrate.py` (potentiometers,
@@ -101,8 +138,8 @@ The details of each part are under "The sorting run" below.
   `elbow_servo_hold.py` (holds the elbow servo at an end, for refitting its link), `slide_wrist.py`
   (start, park and bounded single moves), `tip_view.py` (the tip as the camera finds it),
   `camera_calibrate.py` (fits the arm to the camera), `camera_guide.py` (steers the tip with the camera),
-  `resistor_nav.py` (click a resistor or a bin and the arm goes to it), `sort_resistors.py` (the sorting
-  run: sorts the plate on its own).
+  `resistor_nav.py` (click a resistor or a bin and the arm goes to it), `sort_resistors_auto.py` (the sorting
+  run, the procedure fixed: CALIBRATE then START), `sort_resistors.py` (the same with every step on its own button).
 - `tests/` - tests for `robot_control/` (`python -m pytest`).
 - `experiments/` - investigations, kept on this machine and out of git (as in robot_offline): one folder
   each, `YYYY-MM-DD_topic/`, with a `README.md` (goal, outcome, evidence) and the scripts that reproduce it.
@@ -434,8 +471,8 @@ jaws went.
 
 | Class | File | Its job |
 |---|---|---|
-| `Eyes` | `vision/eyes.py` | One look: the plate found and its exposure settled, then the mean of 8 fresh frames (as robot_offline's `read_plate` takes a picture, and as the band reader was trained), the bodies segmented on it, each one's centre and direction. Each body's value is read from that picture and from a close-up of its own at the focus its distance needs (robot_offline's `closeup.take`, about 1.5 s a body), the two views averaged as the reader was scored. Close-ups are kept by where a body lies, so only the first look, and new or moved bodies, take them (`--no-closeups` skips them). The scene must be still: the arm parked, hands clear |
-| `BodyMemory` | `vision/body_memory.py` | Follows each resistor from look to look by where it lies (as robot_offline's `Steady`): a known one still counts when its score dips, one missing from a look is waited for, a picked one that's still there is the same resistor. Averages each one's band readings over its last 3 looks and its close-up (as `learned.Views`) |
+| `Eyes` | `vision/eyes.py` | `look()`, every time the arm is parked: the plate found, the mean of 8 fresh frames, the resistors segmented and followed (each with the value it was read as). `read_values()`, once at START: a focus sweep over the parts (robot_offline's `closeup.calibrate`, the rule kept for this read only), then each part read from the averaged picture and from its own close-up, combined (averaged where they agree, the close-up where they don't). The scene must be still: the arm parked, hands clear |
+| `BodyMemory` | `vision/body_memory.py` | Follows each resistor from look to look by where it lies (as robot_offline's `Steady`): a known one still counts when its score dips, one missing from a look is waited for, a picked one that's still there is the same resistor. Keeps each one's start-of-run reading; it holds while the resistor stays within 3 mm and 15 degrees of where it was read, else it is to be measured |
 | `Resistor`, `PlateView` | `world/types.py` | What a look returns |
 | `BinPlan` | `planning/bins.py` | Which bin each value goes in: the first time a value is sorted it takes the next free slot (A1, A2, ... in `bins_real.toml`'s order) and keeps it for the run. All eight slots take values; a value outside 10 ohm to 10 kohm has none |
 | `PickMemory` | `planning/memory.py` | The gripper can't feel a resistor, so the next look judges a pick: its spot empty means sorted, a body still there means missed. Two misses, or a pick the arm refused, and that resistor is left |
@@ -445,9 +482,11 @@ jaws went.
 | `SortingApp` | `task/app.py` | The buttons, each running one job (calibrate, look, run) in the background so the window stays alive |
 | `RunLog` | `task/run_log.py` | `logs/sort_runs/<time>/`: events.csv and a picture per look |
 
-**What stays on the plate:** a resistor read below the band reader's confidence limit (0.7 for now), one
-read outside 10 ohm to 10 kohm, one the arm missed twice or couldn't reach, and one whose value has no
-bin left once all 8 are taken.
+**What stays on the plate:**
+- a resistor to be measured: unsure at the read (under 0.7), moved since, or not there at the read;
+- one read outside 10 ohm to 10 kohm;
+- one the arm missed twice or couldn't reach;
+- one whose value has no bin left once all 8 are taken.
 
 **When it stops:** nothing left to sort; 3 picks in a row that came to nothing (check the calibration); a
 resistor it couldn't drop (the arm is left holding it: a person must look); the plate not found; q.

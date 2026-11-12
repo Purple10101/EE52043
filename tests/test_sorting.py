@@ -96,7 +96,7 @@ def test_unsure_and_given_up_resistors_stay_on_the_plate():
     planner = Planner(bin_plan(), memory)
     plan = planner.plan(view(resistor(1, 0, -130, ohms=None, confidence=0.4), resistor(2, 40, -100)))
     assert plan.next is None and plan.waiting == 0
-    assert plan.fates[1].startswith("stays: unsure (best 1k")
+    assert plan.fates[1].startswith("stays: measure: unsure (best 1k")
     assert plan.fates[2] == "stays: the arm couldn't pick it"
 
 
@@ -136,8 +136,25 @@ class FakeEyes:
         self.looks += 1
         return view(*self.plate)
 
+    def read_values(self):
+        return self.look()
+
     def picked(self, centre_mm):
         pass
+
+    def lens_mm(self):
+        return (-144.7, -144.9, 181.7)        # the camera, as the plate fit puts it
+
+
+PARK_POSE = (-77.0, 110.0)
+SLOT_POSES = {"A1": (58.9, 129.7), "A2": (56.2, 116.4), "A3": (57.1, 101.6), "B4": (7.0, 85.3)}   # taught angles
+
+
+class GeometryNavigator:
+    def __init__(self):
+        from robot_control.config import ArmSettings, RigSettings
+        from robot_control.kinematics.arm import Kinematics
+        self.kinematics, self.rig = Kinematics(ArmSettings.from_config()), RigSettings.from_config()
 
 
 class FakeArm:
@@ -148,6 +165,15 @@ class FakeArm:
         self.eyes, self.misses, self.refuses, self.drops_fail = eyes, set(misses), set(refuses), drops_fail
         self.holding, self.message, self.done = False, "", []
         self.last_started = "2026-11-11 15:00"
+        self.navigator = GeometryNavigator()
+        self.pose = PARK_POSE
+
+    def joints(self):
+        return self.pose
+
+    def move_to(self, base, elbow):
+        self.done.append(("move_to", base, elbow))
+        self.pose = (base, elbow)
 
     def park(self):
         if self.holding:
@@ -166,6 +192,7 @@ class FakeArm:
 
     def drop(self, bin_id):
         self.done.append(f"drop {bin_id}")
+        self.pose = SLOT_POSES.get(bin_id, self.pose)
         if self.drops_fail:
             self.message = "NOT LOWERING"
             return False
@@ -463,4 +490,109 @@ def test_every_look_is_kept_with_its_readings_and_crops(tmp_path):
     assert kinds == ["body", "faint", "missing"]
     b = rows[0]
     assert b["best"] == "1000.0" and b["confidence"] == "0.55" and b["colours"] == "brown black black brown brown"
-    assert b["fate"].startswith("stays: unsure")
+    assert b["fate"].startswith("stays: measure: unsure")
+
+
+def test_values_are_read_once_at_the_start_and_each_cycle_only_looks():
+    class CountingEyes(FakeEyes):
+        reads = 0
+
+        def read_values(self):
+            CountingEyes.reads += 1
+            return self.look()
+
+    eyes = CountingEyes(resistor(1, 0, -130), resistor(2, 40, -100))
+    supervisor(eyes, FakeArm(eyes)).run()
+    assert CountingEyes.reads == 1 and eyes.looks > 2
+
+
+def test_a_resistor_pushed_away_by_the_jaws_is_a_miss_not_a_success():
+    from dataclasses import replace
+    memory = PickMemory()
+    memory.attempted(Attempt((30.5, -129.4), 100.0, "A2"))
+    pushed = replace(resistor(9, 27.3, -132.9, ohms=None), note="not read this run (missed at the start, or uncovered since)")
+    assert memory.judge(view(pushed)) == "missed (pushed away)"
+    assert memory.sorted == []
+    memory.attempted(Attempt((30.5, -129.4), 100.0, "A2"))
+    far = replace(resistor(9, 0.0, -100.0, ohms=None), note="not read this run (missed at the start, or uncovered since)")
+    assert memory.judge(view(far)) == "sorted"                     # a new body far away is something else
+
+
+
+# Looking from the trays, not the park
+
+def test_after_a_drop_into_an_a_slot_the_camera_looks_from_there():
+    eyes = FakeEyes(resistor(1, 0, -130, ohms=1500), resistor(2, 40, -100, ohms=1500))
+    arm = FakeArm(eyes)
+    supervisor(eyes, arm).run()                     # both go to A1, which hides none of the plate
+    assert [d for d in arm.done if isinstance(d, tuple)] == []
+    assert arm.done.count("park") == 2              # at the start and the end only, not between picks
+
+
+def test_after_a_drop_into_a_b_slot_the_arm_moves_over_a2_to_clear_the_view():
+    from robot_control.task.supervisor import LOOK_POSE
+    eyes = FakeEyes(resistor(1, 0, -130, ohms=1500), resistor(2, 40, -100, ohms=1500))
+    arm = FakeArm(eyes)
+    supervisor(eyes, arm, bins=bin_plan(("B4", "A1"))).run()     # 1k5 takes B4, whose pose hides the plate
+    assert ("move_to", *LOOK_POSE) in arm.done
+
+
+def test_a2_and_the_a_slots_hide_none_of_the_plate_and_the_b_slots_do():
+    from robot_control.task.supervisor import LOOK_POSE
+    from robot_control.vision.occlusion import arm_hides_plate
+    nav, lens = GeometryNavigator(), (-144.7, -144.9, 181.7)
+    hides = lambda pose: arm_hides_plate(*pose, lens, nav.kinematics, nav.rig)
+    assert not hides(LOOK_POSE)
+    # (the park isn't checked: the check allows for the gripper down at bin depth, which it never is there)
+    assert all(not hides(SLOT_POSES[a]) for a in ("A1", "A2", "A3"))
+    assert hides(SLOT_POSES["B4"])
+
+
+# An unclassified bin (sort_resistors_auto.py --unclassified-bin)
+
+def test_an_unclassified_bin_takes_unread_resistors_and_never_a_value():
+    bins = BinPlan(["A1", "A2", "B4"], SORTER, unclassified="B4")
+    assert bins.bin_for(None) == "B4"
+    assert bins.assign(None) == "B4" and bins.assigned == {}
+    assert bins.assign(1500) == "A1" and bins.assign(2200) == "A2"
+    assert bins.bin_for(4700) is None                       # B4 is never handed out to a value
+    assert [t.label for t in bins.trays([])] == ["", "", "unclassified"]
+
+
+def test_an_unclassified_bin_must_be_one_of_the_bins():
+    with pytest.raises(ValueError, match="no bin C1"):
+        BinPlan(["A1", "B4"], SORTER, unclassified="C1")
+
+
+def test_without_an_unclassified_bin_an_unread_resistor_has_none():
+    assert bin_plan().bin_for(None) is None
+
+
+def test_with_an_unclassified_bin_unread_resistors_are_picked_into_it_unless_given_up():
+    memory = PickMemory()
+    memory.give_up((40.0, -100.0), "missed 2 times")
+    planner = Planner(BinPlan(["A1", "B4"], SORTER, unclassified="B4"), memory)
+    plan = planner.plan(view(resistor(1, 0, -130, ohms=None, confidence=0.4), resistor(2, 40, -100, ohms=None)))
+    assert plan.next.resistor.number == 1 and plan.next.bin_id == "B4"
+    assert plan.fates[1] == "NEXT unclassified (best 1k at 40%) -> B4"
+    assert plan.fates[2] == "stays: missed 2 times"
+
+
+def test_a_run_with_an_unclassified_bin_clears_unread_resistors_too():
+    eyes = FakeEyes(resistor(1, 0, -130, ohms=None, confidence=0.3), resistor(2, 30, -100, ohms=1500))
+    arm = FakeArm(eyes)
+    boss = supervisor(eyes, arm, BinPlan(["A1", "A2", "A3", "B4"], SORTER, unclassified="B4"))
+    assert boss.run().startswith("done")
+    assert eyes.plate == []
+    assert sorted(d for d in arm.done if isinstance(d, str) and d.startswith("drop")) == ["drop A1", "drop B4"]
+    assert boss.bins.assigned == {1500: "A1"}
+    trays = {t.bin_id: t for t in boss.bins.trays(boss.memory.sorted)}
+    assert (trays["B4"].label, trays["B4"].count) == ("unclassified", 1)
+
+
+def test_with_an_unclassified_bin_values_outside_the_range_go_there_too():
+    bins = BinPlan(["A1", "B4"], SORTER, unclassified="B4")
+    assert bins.bin_for(1e6) == "B4" and bins.assign(1e6) == "B4" and bins.assigned == {}
+    plan = Planner(bins, PickMemory()).plan(view(resistor(1, 0, -130, ohms=100_000)))
+    assert plan.next.bin_id == "B4"
+    assert plan.fates[1] == "NEXT unclassified (100k, outside the range) -> B4"

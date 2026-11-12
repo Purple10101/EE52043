@@ -9,8 +9,8 @@
 
   The v4's whole stroke is about 17.8 servo deg, about 200 us, and the gap changes about 0.68 mm per servo
   degree. A v3 stroke (500 us) would drive it far past its ends. On our gripper a higher pulse CLOSES, the
-  opposite of v3: the tips touch at 1660 us and 1480 us is open, saved on the board on 2026-11-06. So 1500 us
-  is not half open as the assembly guide says. The jaws can't be moved by hand, and steps under about
+  opposite of v3: after a rebuild on 2026-11-12 the tips touch at about 1740 us and 1480 us is open (1660 and
+  1480 before it). So 1500 us is not half open as the assembly guide says. The jaws can't be moved by hand, and steps under about
   20 us don't show.
 
   Safety:
@@ -49,9 +49,10 @@ const int PWM_BITS = 14;
 const long PERIOD_US = 20000;
 const int CENTER_US = 1500;        // the middle of the limits below, not of the jaws
 const int UNCAL_HALF_US = 60;      // about 5 deg either side of centre before calibration: inside the jaws' ends
-const int ENVELOPE_HALF_US = 250;  // calibration points must lie within this of centre
+const int ENVELOPE_HALF_US = 350;  // calibration points must lie within this of centre (250 until 2026-11-12,
+                                   // when the rebuilt gripper's closed end reached it)
 const int MIN_SPAN_US = 100;
-const int MAX_SPAN_US = 260;       // the stroke is about 200 us
+const int MAX_SPAN_US = 400;       // 360 us since the rebuild (closed 1790, open 1430, 2026-11-12); 260 before
 const uint16_t EE_MAGIC = 0x6734;  // "g4": a saved v3 calibration can't pass as v4's
 const unsigned long TICK_MS = 10;
 

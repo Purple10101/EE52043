@@ -153,9 +153,9 @@ def test_a_move_between_resistors_doesnt_lift(monkeypatch):
     assert made == ["glide"]
 
 
-def test_leaving_the_park_swings_out_fully_up_then_lowers(monkeypatch):
+def test_leaving_the_park_swings_out_fully_up_then_glides_down(monkeypatch):
     made, _ = run_go(monkeypatch, resistor_nav.bench.PARK_SLIDE, [(-50.0, 100.0)], from_park=True)
-    assert made == ["swing", ("slide", resistor_nav.bench.HOVER_SLIDE), "glide"]
+    assert made == ["swing", "glide"]           # no stop at the travel height on the way down
 
 
 def test_nothing_moves_with_no_way_round_the_tower(monkeypatch):
@@ -204,11 +204,10 @@ def test_holding_a_resistor_only_a_bin_is_allowed(monkeypatch, command):
     assert "choose a bin" in nav.status
 
 
-def test_a_bin_drops_the_resistor_at_the_bottom_then_lifts(monkeypatch):
+def test_a_bin_drops_the_resistor_at_the_bottom_and_leaves_the_lift_to_the_next_move(monkeypatch):
     nav, made = holding_nav(monkeypatch)
     nav.perform(("to_bin", "B1", SLOT))
-    hover = resistor_nav.bench.HOVER_SLIDE
-    assert made == ["swing", ("slide", BIN_SLIDE), "open", ("slide", hover)]
+    assert made == ["swing", ("slide", BIN_SLIDE), "open"]     # parking lifts it, straight to fully up
     assert not nav.holding
     assert "dropped" in nav.status
 

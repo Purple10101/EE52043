@@ -4,9 +4,10 @@
 weights = "models/seg_grey_v2/best.pt"   # relative paths are in the robot_offline repo
 conf = 0.5                # below about 0.3 the plate's rim shows up as false bodies
 
-# The band reader's value is trusted at this confidence or more; under it the part stays on the plate as
-# "unsure". The sorting run's own setting: robot_offline's tools keep theirs (configs/band_reader.toml
-# [deploy], provisionally 0.7). 0.9 chosen by the user on 2026-11-11 from a 9-look test of 8 known parts:
-# 0.7 let a 4k7 through as 470R, nothing wrong passed from 0.85 up, and the highest wrong reading was 0.82
-# (EE52043 experiments/2026-11-11_full_run_8, section 6, kept on the lab PC).
-min_confidence = 0.9
+# The band reader's value is trusted at this confidence or more; under it the part is to be measured. The
+# sorting run's own setting: robot_offline's tools keep theirs (configs/band_reader.toml [deploy], 0.7).
+# History: 0.9 on 2026-11-11 after a 9-look test of 8 known parts (at 0.7 a 4k7 read as 470R at 0.75-0.82
+# passed; nothing wrong passed from 0.85 up; EE52043 experiments/2026-11-11_full_run_8, section 6). Back to 0.7
+# the same evening at the user's request, the readings now being taken with the focus checked before each
+# capture (robot_offline pre/focus.py), which that test didn't have.
+min_confidence = 0.7
