@@ -265,6 +265,22 @@ void update(void)
 
 			break;
 
+		case 8:		// SCARA_SET_PLAY (not in the course API; firmware/README.md)
+			// |0008   |aaaa|bbbb    |cccc|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|
+			// |command|axis|play_deg|dir |xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|
+			// axis int32 0 (base) or 1 (elbow), play_deg float, dir int32 +1, -1 or 0 (off).
+			// Replies 1, or 0 for a bad axis, direction or play (nothing changed).
+
+			int32_t axis_8; memcpy(&axis_8, &command.values[0], sizeof(int32_t));
+			float play_8; memcpy(&play_8, &command.values[1], sizeof(float));
+			int32_t dir_8; memcpy(&dir_8, &command.values[2], sizeof(int32_t));
+
+			int32_t play_flag = servo_controller_scara_set_play(scara_0.servo_controller_scara,
+																 axis_8, play_8, dir_8);
+			HAL_UART_Transmit(uart_channel, (uint8_t*)&play_flag, sizeof(int32_t), HAL_MAX_DELAY);
+
+			break;
+
 		default:
 
 			break;

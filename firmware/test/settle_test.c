@@ -113,6 +113,53 @@ static void report(const char *name, int new_way)
 	printf("%-8s rms %.3f deg, worst %.3f deg, mean settling %.0f ms\n", name, sqrt(sum / RUNS), worst, time_ms / RUNS);
 }
 
+/* A move's start offset (carried_offset_us): the first pulse of a move is the one already being sent, the offset
+   fades as the joint travels, fully over a long move and in part over a short one, and never jumps. */
+static int check(const char *what, int ok)
+{
+	printf("%s %s\n", ok ? "ok  " : "FAIL", what);
+	return ok ? 0 : 1;
+}
+
+static int carry_checks(void)
+{
+	int failed = 0;
+	failed += check("a move starts with all of its offset: no kick",
+	                fabsf(carried_offset_us(90.0f, 0.0f, 120.0f) - 90.0f) < 1e-4f);
+	failed += check("a long move ends with none of it, as before",
+	                fabsf(carried_offset_us(90.0f, 1.0f, 120.0f)) < 1e-4f);
+	failed += check("so does a long move the other way",
+	                fabsf(carried_offset_us(-90.0f, 1.0f, -40.0f)) < 1e-4f);
+	failed += check("a 5 deg move keeps three quarters at its end",
+	                fabsf(carried_offset_us(80.0f, 1.0f, 5.0f) - 60.0f) < 1e-3f);
+	failed += check("a joint that doesn't move keeps all of it",
+	                fabsf(carried_offset_us(80.0f, 1.0f, 0.0f) - 80.0f) < 1e-4f);
+	failed += check("a wild offset still starts whole: no step at the start",
+	                fabsf(carried_offset_us(900.0f, 0.0f, 50.0f) - 900.0f) < 1e-4f);
+	failed += check("but what a move keeps at its end is limited",
+	                fabsf(carried_offset_us(900.0f, 1.0f, 0.0f) - CARRY_LIMIT_US) < 1e-4f);
+	failed += check("in both directions",
+	                fabsf(carried_offset_us(-900.0f, 1.0f, 0.0f) + CARRY_LIMIT_US) < 1e-4f);
+	failed += check("settling stops a trim at its limit",
+	                settle_step(5.0f, SETTLE_LIMIT_US) == 0.0f && settle_step(-5.0f, -SETTLE_LIMIT_US) == 0.0f);
+	failed += check("and never steps a trim beyond it back by the excess",
+	                settle_step(5.0f, 260.0f) == 0.0f
+	                && fabsf(settle_step(-5.0f, 260.0f) + SETTLE_MAX_STEP_US) < 1e-4f
+	                && fabsf(settle_step(5.0f, -260.0f) - SETTLE_MAX_STEP_US) < 1e-4f);
+	failed += check("but still limits a step that would cross it",
+	                fabsf(settle_step(5.0f, 199.0f) - 1.0f) < 1e-4f);
+	float last = carried_offset_us(150.0f, 0.0f, 60.0f), biggest = 0.0f;
+	for (int i = 1; i <= 1000; i++)
+	{
+		float now = carried_offset_us(150.0f, i / 1000.0f, 60.0f);
+		biggest = fmaxf(biggest, fabsf(now - last));
+		last = now;
+	}
+	printf("     the largest change in one step of a 1000-step move: %.3f us\n", biggest);
+	failed += check("it fades smoothly (no step over 0.2 us in 1000)", biggest < 0.2f);
+	return failed;
+}
+
 int main(void)
 {
 	report("course", 0);
@@ -125,5 +172,6 @@ int main(void)
 		trim += settle_step(30.0f, trim);
 	}
 	printf("held against a stop: trim ends at %.1f us (limit %.1f)\n", trim, SETTLE_LIMIT_US);
-	return fabsf(trim - SETTLE_LIMIT_US) < 0.01f ? 0 : 1;
+	int failed = fabsf(trim - SETTLE_LIMIT_US) < 0.01f ? 0 : 1;
+	return failed + carry_checks();
 }
