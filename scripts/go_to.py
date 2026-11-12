@@ -69,7 +69,7 @@ def main():
 
     input("Servo power on at 5 V, switch on PROGRAM, RESET pressed, arm clear, hand on the plug? Enter: ")
     scara = smc_api.scara_motion_controller(port=args.port or find_port(), timeout=60)
-    scara.SCARA_INITIALISE(L1, L2, Z_MIN, Z_MAX, args.settle, 1.3, 0.01, 0.001, 1.3, 0.01, 0.001)
+    scara.SCARA_INITIALISE(L1, L2, Z_MIN, Z_MAX, args.settle, *smc_api.GAINS)
     print("Calibrating: the base and elbow sweep end to end (as at the start of the demo)...")
     scara.SCARA_AUTO_CALIBRATE()
     print("Moving...")

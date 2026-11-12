@@ -7,12 +7,12 @@
 
 #include "potentiometers.h"
 
-uint16_t pot_raw_value[POTS];
+uint16_t pot_samples[POT_WINDOW * POTS];	// circular DMA, channels interleaved
 potentiometer_t pots[POTS];
 
 void potentiometers_init()
 {
-    HAL_ADC_Start_DMA(&hadc1, pot_raw_value, POTS);
+    HAL_ADC_Start_DMA(&hadc1, (uint32_t *)pot_samples, POT_WINDOW * POTS);
 
     // default values for white robot
 //    pots[0].min_angle = -90.0;
@@ -39,14 +39,19 @@ void potentiometers_init()
 
 float potentiometers_read_raw_value(int _channel)
 {
-    // range 0-4095
-    return pot_raw_value[_channel];
+    // range 0-4095, the mean of the window
+    uint32_t sum = 0;
+    for (int i = _channel; i < POT_WINDOW * POTS; i += POTS)
+    {
+        sum += pot_samples[i];
+    }
+    return (float)sum / POT_WINDOW;
 }
 
 float potentiometers_read_angle(int _channel)
 {
     float angle = pots[_channel].min_angle
-                + ((pot_raw_value[_channel] - pots[_channel].min_raw_value)
+                + ((potentiometers_read_raw_value(_channel) - pots[_channel].min_raw_value)
                 * (pots[_channel].max_angle - pots[_channel].min_angle))
                 / (pots[_channel].max_raw_value - pots[_channel].min_raw_value);
     return angle;

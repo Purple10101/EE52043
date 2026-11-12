@@ -46,6 +46,13 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     STM32F446xx
     $<$<CONFIG:Debug>:DEBUG>)
 
+# The play build (firmware/README.md): every base/elbow target approached from below. Build it in its own
+# directory: cmake -S firmware -B firmware/build_play -G Ninja -DSCARA_PLAY=ON
+option(SCARA_PLAY "approach base/elbow targets from one side (PLAY_APPROACH_DEFAULT=1)" OFF)
+if(SCARA_PLAY)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE PLAY_APPROACH_DEFAULT=1)
+endif()
+
 set(MCU_FLAGS -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard)
 
 target_compile_options(${PROJECT_NAME} PRIVATE

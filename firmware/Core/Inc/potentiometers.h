@@ -15,6 +15,7 @@
 #include "adc.h"
 
 #define POTS 2
+#define POT_WINDOW 512	// samples of each, 6 us apart: 3 ms, one servo PWM period
 
 typedef struct {
     float min_angle;

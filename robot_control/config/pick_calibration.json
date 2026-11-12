@@ -1,0 +1,18 @@
+{
+  "model": "elbow",
+  "rotation_deg": 180.0,
+  "translation_m": [
+    0.0,
+    0.0
+  ],
+  "jaw_mm": [
+    0.0,
+    0.0
+  ],
+  "elbow_offset_deg": 0.949807012277585,
+  "rms_mm": 1.7906246669777974,
+  "left_out_rms_mm": 1.9614728389329739,
+  "pairs": "pick_teach_20261112_001649.csv",
+  "n": 7,
+  "date": "2026-11-12 00:24"
+}

@@ -23,4 +23,4 @@ translation_m = [0.0, 0.0]
 
 [motion]
 hover_z_m = 0.15          # placeholder: which end of the slide range is up is not confirmed on the arm
-move_time_s = 3.0         # docs/hardware-api.md: slow moves, and under about 3 s to avoid reply timeouts
+move_time_s = 3.0         # slow moves, and under about 3 s to avoid reply timeouts

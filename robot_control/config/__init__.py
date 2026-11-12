@@ -3,8 +3,6 @@
 `load("workspace")` returns workspace.toml as nested read-only tables; a missing key raises
 ConfigError naming the file and the key. The `*.from_config()` constructors below read one file
 each and check it, so a bad value fails at startup rather than mid-move.
-
-Plan: docs/plans/01-world-and-config.md
 """
 
 import json
@@ -131,7 +129,7 @@ class GripperSettings:
     jaw_axis_at_zero_deg: float     # robot-frame direction the jaws close along at tool angle 0
 
     @classmethod
-    def from_config(cls, name="parallelogram_v3"):
+    def from_config(cls, name="parallelogram_v4"):
         t = load(name, CONFIG_DIR / "grippers")
         return cls(name, tuple(float(v) / 1000 for v in t["tool_offset_mm"]), float(t["tip_below_shaft_mm"]) / 1000,
                    bool(t["symmetric"]), float(t["jaw_axis_at_zero_deg"]))
@@ -166,8 +164,10 @@ class KeepOutMap:
 class VisionSettings:
     weights: Path                   # the segmentation model; relative paths are in the robot_offline repo
     conf: float
+    min_confidence: float | None = None     # the band reader's limit for the sorting run; None: the reader's own
 
     @classmethod
     def from_config(cls):
         t = load("vision")
-        return cls(Path(t["weights"]), float(t["conf"]))
+        limit = t.get("min_confidence")
+        return cls(Path(t["weights"]), float(t["conf"]), None if limit is None else float(limit))

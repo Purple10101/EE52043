@@ -1,0 +1,25 @@
+{
+  "rotation_deg": -177.26079096562242,
+  "translation_m": [
+    -0.0009099805932986206,
+    -0.003036806462901257
+  ],
+  "base_scale": 1.0445286164257646,
+  "elbow_offset_deg": -0.6537773774384952,
+  "date": "2026-11-12",
+  "pairs": "camera_calibration_20261106_012205.csv",
+  "rms_mm": 1.33,
+  "worst_mm": 2.22,
+  "left_out_rms_mm": 1.62,
+  "shifted": {
+    "by_mm": [
+      -2.26,
+      -0.45
+    ],
+    "on": "2026-11-12 19:09",
+    "pairs": "aim_check_20261112_190520.csv",
+    "rms_before_mm": 2.49,
+    "rms_after_mm": 0.95,
+    "fitted_on": "2026-11-12"
+  }
+}

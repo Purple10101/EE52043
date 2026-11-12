@@ -1,5 +1,13 @@
 # The overhead camera's detector. Camera settings, plate model, work area and tiles come from the
 # robot_offline repo's configs/ (installed with pip install -e), so training and the robot match.
 
-weights = "models/synth_only_v1/best.pt"   # relative paths are in the robot_offline repo
+weights = "models/seg_grey_v2/best.pt"   # relative paths are in the robot_offline repo
 conf = 0.5                # below about 0.3 the plate's rim shows up as false bodies
+
+# The band reader's value is trusted at this confidence or more; under it the part is to be measured. The
+# sorting run's own setting: robot_offline's tools keep theirs (configs/band_reader.toml [deploy], 0.7).
+# History: 0.9 on 2026-11-11 after a 9-look test of 8 known parts (at 0.7 a 4k7 read as 470R at 0.75-0.82
+# passed; nothing wrong passed from 0.85 up; EE52043 experiments/2026-11-11_full_run_8, section 6). Back to 0.7
+# the same evening at the user's request, the readings now being taken with the focus checked before each
+# capture (robot_offline pre/focus.py), which that test didn't have.
+min_confidence = 0.7

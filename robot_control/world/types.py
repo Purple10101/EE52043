@@ -64,6 +64,49 @@ def rectangle(outline):
     return (float(centre[0]), float(centre[1])), float(np.hypot(*long_side)), float(np.hypot(*short_side)), yaw
 
 
+@dataclass(frozen=True, eq=False)
+class Resistor:
+    """One resistor as the camera saw it, ready to plan with: where it lies, which way, and what its bands
+    say. Scene frame: mm on the plate, degrees from scene +x anticlockwise (workspace.toml)."""
+
+    number: int                     # its place in the look, from 1, as the window labels it
+    centre_mm: tuple[float, float]  # where the jaws' centre goes: the body's centroid, moved for its height
+    direction_deg: float            # its long axis
+    score: float                    # how sure segmentation is that this is a body
+    value_ohm: float | None         # its value when the band reader is sure enough, else None
+    best_ohm: float                 # the reader's best guess, sure or not
+    confidence: float               # the reader's confidence in best_ohm, 0 to 1
+    outline_px: np.ndarray          # N × 2, rectified px, for drawing
+    closeup: bool = False           # its value read from a close-up too, not just the plate-wide picture
+    colours: tuple = ()             # the bands the reader made of it, in reading order
+    body_id: int = 0                # which body this is from look to look (vision.BodyMemory), 0 if not followed
+    crop: object = None             # its band crop from this look's picture (BGR), for the log
+    closeup_crop: object = None     # its close-up's band crop, if it has had one
+    note: str = ""                  # why it has no trusted value (to be measured), "" if it has one
+
+    @property
+    def is_read(self):
+        """Whether its value is known well enough to sort it."""
+        return self.value_ohm is not None
+
+    def distance_to(self, point_mm):
+        return float(math.hypot(self.centre_mm[0] - point_mm[0], self.centre_mm[1] - point_mm[1]))
+
+
+@dataclass(eq=False)
+class PlateView:
+    """One look at the plate, taken with the arm parked: the frame, where the plate is in it, and the
+    resistors on it."""
+
+    id: str
+    frame: np.ndarray               # the raw camera frame
+    cal: object                     # robot_offline's rectify.Calibration for that frame
+    resistors: list[Resistor]
+    faint: list = field(default_factory=list)       # (outline px, score, centre mm) found but too faint to be a body
+    missing: list = field(default_factory=list)     # centres (mm) of bodies seen before but not in this look
+    focus: str = ""                                 # the focus it was taken at: the focus check's status, or why none
+
+
 @dataclass(eq=False)
 class Snapshot:
     id: str

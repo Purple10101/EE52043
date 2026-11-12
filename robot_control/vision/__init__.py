@@ -7,4 +7,6 @@ outlines into Detections in the robot frame.
     vision.rig        scene mm to robot m, body-height correction (pure maths)
     vision.camera     LiveCamera, ReplayCamera
     vision.detector   Detector: frame to Detections
+    vision.bodies     a body's centre and direction in scene mm, from its outline
+    vision.eyes       Eyes: one look at the plate, every resistor with its value
 """

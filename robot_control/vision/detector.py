@@ -1,6 +1,6 @@
 """A raw camera frame to Detections in the robot frame.
 
-1. Calibrate: find the plate in the frame (robot_offline rectify), from scratch or near the last fit.
+1. Calibrate: find the plate in the frame (robot_offline plate_search, as every tool does).
 2. Detect: the frame rectified to a top-down view of the plate, white-balanced and masked as in
    training, through the segmentation model on tiles. Outlines come out in rectified px.
 3. Map: rectified px to scene mm on the plate surface; each body's outline moved for its height
@@ -12,7 +12,7 @@ import numpy as np
 
 from robot_offline import config as offline_config
 from robot_offline.inf import tiling
-from robot_offline.pre import rectify
+from robot_offline.pre import plate_search, rectify
 
 from robot_control.vision.rig import correct_height, scene_to_robot
 from robot_control.world import Detection
@@ -30,28 +30,36 @@ class Detector:
         self._model = model
 
     @property
+    def weights(self):
+        """The segmentation weights' path; relative ones are in the robot_offline repo."""
+        w = self.vision.weights
+        return w if w.is_absolute() else offline_config.ROOT / w
+
+    @property
+    def grey(self):
+        """Whether the model takes greyscale frames (its handoff.json says so)."""
+        return tiling.wants_grey(self.weights)
+
+    @property
     def model(self):
         if self._model is None:
             from ultralytics import YOLO
-            weights = self.vision.weights
-            if not weights.is_absolute():
-                weights = offline_config.ROOT / weights
-            if not weights.exists():
-                raise FileNotFoundError(f"{weights} not found (in the robot_offline repo, run git lfs pull)")
-            self._model = YOLO(str(weights))
+            if not self.weights.exists():
+                raise FileNotFoundError(f"{self.weights} not found (in the robot_offline repo, run git lfs pull)")
+            self._model = YOLO(str(self.weights))
         return self._model
 
     def calibrate(self, frame, previous=None):
-        """The plate found in frame: near previous (a rectify.Calibration) if given, else from
-        scratch. Raises rectify.PlateNotFound."""
-        cal, _ = rectify.recalibrate(frame, previous) if previous is not None else rectify.calibrate(frame)
-        return cal
+        """The plate found in a frame already taken (saved, or the twin's): robot_offline's plate_search.find,
+        started near previous (a rectify.Calibration) if given. Live cameras use plate_search.Tracker or
+        find_now instead, which set the exposure for the search. Raises rectify.PlateNotFound."""
+        return plate_search.find(frame, last=None if previous is None else previous.corners_px, keep=False)
 
     def detect(self, frame, cal, snapshot_id):
         """(Detections, rectified image) for frame; the image is white-balanced, for overlays."""
         image, balanced = rectify.model_input(frame, cal)
         frame_tiles = tiling.tiles(self.work_area, cal.settings.size, self.tile_size, self.tile_overlap)
-        polygons, scores = tiling.predict_frame(self.model, image, frame_tiles, conf=self.vision.conf)
+        polygons, scores = tiling.predict_frame(self.model, image, frame_tiles, conf=self.vision.conf, grey=self.grey)
         return to_detections(polygons, scores, cal, self.rig, self.workspace, snapshot_id), balanced
 
 

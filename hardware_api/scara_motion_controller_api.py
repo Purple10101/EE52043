@@ -1,6 +1,18 @@
 import serial
 import struct
 
+# Every move time sent to the arm is multiplied by this. The course firmware (and builds up to ead8085)
+# took 2 ms per "1 ms" step, so a move with time T really took 2T, and every time in the scripts was tuned
+# against that. The fixed firmware (2026-11-12) runs T in real time; 2.0 keeps the arm moving as it did.
+# Set it to 1.0 to send the scripts' times as they are (twice as fast); keep 2.0 with a pre-fix build and
+# its moves take 4T.
+TIME_SCALE = 2.0
+# Move-phase PID gains for SCARA_INITIALISE (base P, I, D, then elbow P, I, D). The course's 1.3/0.01/0.001
+# rattles the joints through their play; the fixed firmware corrects with its start offset and settling
+# instead. With a pre-fix build (ead8085 or older) use COURSE_GAINS: 0 makes its move-start kicks worse.
+GAINS = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+COURSE_GAINS = (1.3, 0.01, 0.001, 1.3, 0.01, 0.001)
+
 class scara_motion_controller:
     def __init__(self, port, baudrate=115200, timeout=None):
         self.api = serial.Serial(port, baudrate, timeout=timeout)
@@ -44,7 +56,7 @@ class scara_motion_controller:
         # |0003   |aaaa|bbbb |cccc|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|
         # |command|axis|angle|time|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|
 
-        command = struct.pack('<iiffiiiiiiii', 3, axis, angle, time, 0, 0, 0, 0, 0, 0, 0, 0)
+        command = struct.pack('<iiffiiiiiiii', 3, axis, angle, time * TIME_SCALE, 0, 0, 0, 0, 0, 0, 0, 0)
         self.send_command(command)
     
     def SCARA_MOVE_JOINTS(self, angle_0, angle_1, angle_2, angle_3, time):
@@ -52,7 +64,7 @@ class scara_motion_controller:
         # |0004   |aaaa   |bbbb   |cccc   |dddd   |eeee|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|
         # |command|angle_0|angle_1|angle_2|angle_3|time|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|
 
-        command = struct.pack('<ifffffiiiiii', 4, angle_0, angle_1, angle_2, angle_3, time, 0, 0, 0, 0, 0, 0)
+        command = struct.pack('<ifffffiiiiii', 4, angle_0, angle_1, angle_2, angle_3, time * TIME_SCALE, 0, 0, 0, 0, 0, 0)
         self.send_command(command)
 
     def SCARA_MOVE_COORD(self, x, y, z_angle, z, time):
@@ -60,7 +72,7 @@ class scara_motion_controller:
         # |0005   |aaaa|bbbb|cccc   |dddd|eeee|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|
         # |command|x   |y   |z_angle|z   |time|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|
 
-        command = struct.pack('<ifffffiiiiii', 5, x, y, z_angle, z, time, 0, 0, 0, 0, 0, 0)
+        command = struct.pack('<ifffffiiiiii', 5, x, y, z_angle, z, time * TIME_SCALE, 0, 0, 0, 0, 0, 0)
         self.send_command(command)
     
     def SCARA_READ_ANGLE(self, axis):
@@ -98,3 +110,12 @@ class scara_motion_controller:
 
         x, y, z_angle, z = struct.unpack('<ffff', response)
         return x, y, z_angle, z
+
+    def SCARA_SET_PLAY(self, axis, play_deg, direction):
+        # Not in the course firmware: firmware/README.md (2026-11-12 builds), which never answers it otherwise.
+        # |0008   |aaaa|bbbb    |cccc|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|
+        # |command|axis|play_deg|dir |xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|xxxx|
+        # axis 0 base / 1 elbow; direction +1 approach from below, -1 from above, 0 off. Flag 0 = refused.
+
+        command = struct.pack('<iifiiiiiiiii', 8, axis, play_deg, direction, 0, 0, 0, 0, 0, 0, 0, 0)
+        self.send_command(command)

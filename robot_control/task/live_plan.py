@@ -80,32 +80,31 @@ class Frames:
     def __init__(self, path=None, twin=False):
         from robot_offline import config as offline_config
         self.camera_cfg = offline_config.load("camera")
-        self.cap, self.control, self.fixed, self.twin = None, None, None, None
+        self.cap, self.fixed, self.twin = None, None, None
         if twin:
             from robot_control.vision.camera import TwinCamera
             self.twin = TwinCamera()
             self.follow = False
         elif path is None:
             from robot_offline.pre.camera import open_camera
-            from robot_offline.pre.exposure import ExposureControl
             print("Opening the camera (a few seconds while exposure and white balance settle)...")
             self.cap = open_camera(self.camera_cfg)
             c = self.camera_cfg["camera"]
             self.fixed = c["exposure"], c["gain"]
-            self.control = ExposureControl(self.camera_cfg["exposure_control"], *self.fixed, self.cap)
-            self.follow = True
         else:
             from robot_control.vision.camera import ReplayCamera
             self.paths = ReplayCamera(path).paths
             self.index, self.current = 0, None
-            self.follow = False
+        from robot_offline.pre import plate_search
+        # The plate, found and kept as every tool does; on the live camera it sets the exposure too.
+        self.tracker = plate_search.Tracker(self.cap, camera=self.camera_cfg, refit_seconds=REFIND_SECONDS)
 
     @property
     def live(self):
         return self.cap is not None
 
-    def read(self, cal):
-        """(id, newest frame) or None; meters the exposure on the live camera."""
+    def read(self):
+        """(id, newest frame) or None. Pass the frame to self.tracker.update."""
         if self.twin is not None:
             return self.twin.grab()
         if not self.live:
@@ -119,8 +118,6 @@ class Frames:
         ok, frame = self.cap.read()
         if not ok:
             return None
-        if self.follow:
-            self.control.meter(frame, cal)
         return time.strftime("%Y%m%d-%H%M%S"), frame
 
     def next(self):
@@ -130,23 +127,22 @@ class Frames:
     def toggle_exposure(self):
         if not self.live:
             return
-        from robot_offline.pre.exposure import ExposureControl
-        self.follow = not self.follow
-        if not self.follow:
+        self.tracker.follow = not self.tracker.follow
+        if not self.tracker.follow:
             self.cap.set(cv2.CAP_PROP_EXPOSURE, self.fixed[0])
             self.cap.set(cv2.CAP_PROP_GAIN, self.fixed[1])
-            self.control = ExposureControl(self.camera_cfg["exposure_control"], *self.fixed, self.cap)
 
     def status(self):
         if self.twin is not None:
             return "simulator twin camera"
         if not self.live:
             return f"saved frame {self.index + 1} of {len(self.paths)}: {self.paths[self.index].stem}   (n next)"
-        if self.follow:
-            return self.control.status()
+        if self.tracker.follow:
+            return self.tracker.control.status()
         return f"exposure fixed at {self.fixed[0]}, gain {self.fixed[1]}"
 
     def close(self):
+        self.tracker.close()
         if self.live:
             self.cap.release()
         if self.twin is not None:
@@ -162,9 +158,7 @@ def main(argv=None):
     p.add_argument("--out", default="logs/live_plan", help="where s saves")
     args = p.parse_args(argv)
 
-    from robot_offline.pre import rectify
     from robot_offline.pre.camera import label, show
-    from robot_offline.pre.live_plate import Fitter
     from robot_control.vision.detector import Detector
 
     vision = VisionSettings.from_config()
@@ -175,8 +169,7 @@ def main(argv=None):
     detector.model
     frames = Frames(args.frames, twin=args.twin)
     print(__doc__.split("Keys:", 1)[1].rstrip())
-    fitter = Fitter(rectify.Settings.from_config(), interval=REFIND_SECONDS)
-    fitter.start()
+    fitter = frames.tracker
 
     cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
     conf = args.conf if args.conf is not None else vision.conf
@@ -185,13 +178,11 @@ def main(argv=None):
     next_run, latency, n_runs, t_start = 0.0, 0.0, 0, time.perf_counter()
     try:
         while True:
-            got = frames.read(fitter.cal)
+            got = frames.read()
             if got is None:
                 continue
             snapshot_id, frame = got
-            if fitter.frame is not frame:
-                fitter.frame = frame
-            cal = fitter.cal
+            cal = fitter.update(frame)
             now = time.perf_counter()
 
             if now >= next_run:
@@ -207,12 +198,7 @@ def main(argv=None):
                 latency = time.perf_counter() - t0
                 n_runs += 1
                 rate = n_runs / max(time.perf_counter() - t_start, 1e-6)
-                if cal is None:
-                    plate = f"looking for the plate: {fitter.error}" if fitter.error else "looking for the plate"
-                else:
-                    plate = f"plate: near side by the {cal.fit['near_side_by']}"
-                    if fitter.error:
-                        plate += " (not found in the latest frame: kept the last fit)"
+                plate = fitter.status()
                 reachable = sum(r.ok for _, r in planned)
                 label(view, [f"{len(planned)} bodies, {reachable} reachable   conf >= {conf:.2f}   "
                              f"{'top-down' if top_down else 'camera view'}   NOT sending to the arm",
@@ -232,12 +218,13 @@ def main(argv=None):
             elif key in (ord("-"), ord("_")):
                 conf, next_run = max(0.05, conf - 0.05), 0.0
             elif key == ord("c"):
-                fitter.restart = True
+                fitter.restart()
             elif key == ord("e"):
                 frames.toggle_exposure()
             elif key == ord("n"):
                 frames.next()
-                fitter.restart, next_run = True, 0.0
+                fitter.restart()
+                next_run = 0.0
             elif key == ord("s") and view is not None:
                 out = Path(args.out)
                 out.mkdir(parents=True, exist_ok=True)
@@ -249,7 +236,6 @@ def main(argv=None):
                     (out / f"plan_{stamp}.json").write_text(json.dumps(to_json(sid, planned_s, cal_s), indent=1))
                 print(f"Saved {out / f'plan_{stamp}'}.*")
     finally:
-        fitter.stop = True
         frames.close()
         cv2.destroyAllWindows()
 

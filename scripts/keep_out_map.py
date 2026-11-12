@@ -33,7 +33,7 @@ import numpy as np
 
 RESOURCES = Path(__file__).resolve().parents[2] / "Robot Resources"
 ARM_STEP = RESOURCES / "arm_and_rig_scene" / "EduSCARA arm - no gripper (plate reach pose).step"
-GRIPPER_STEP = RESOURCES / "gripper" / "v3_final" / "CAD" / "Gripper v3a.1 - Bolt-on Tips.step"
+GRIPPER_STEP = RESOURCES / "gripper" / "v4" / "CAD" / "Gripper v4 - Slim.step"
 TOWER_STEPS = [RESOURCES / "camera_tower" / "print" / "camera_tower_assembly.step",
                RESOURCES / "camera_tower" / "printed_column_variant" / "camera_tower_printed_column_assembly.step"]
 OUT = Path(__file__).resolve().parents[1] / "robot_control" / "config" / "keep_out" / "camera_tower.json"
@@ -203,6 +203,8 @@ def main(argv=None):
             if pts is not None:
                 parts[g].append((name, np.c_[pts, np.ones(len(pts))]))
     for name, shape in [] if args.no_gripper else read_parts(args.gripper):
+        if "optional" in name:      # v4's printed arm clamp: the arm uses the M2 mount
+            continue
         pts = surface_points(shape, SPACING_MM, rng)
         if pts is not None:
             parts["gripper"].append((name, np.c_[pts, np.ones(len(pts))]))
