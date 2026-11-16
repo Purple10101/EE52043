@@ -1,6 +1,7 @@
 # EE52043 - Applied Robotics
 
-Project workspace for the EE52043 robot coursework.
+Project workspace for the EE52043 robot coursework. Tools for testing one part at a time (such as the vision
+terminal) are in [TOOLS.md](TOOLS.md).
 
 ## Running the sorter
 

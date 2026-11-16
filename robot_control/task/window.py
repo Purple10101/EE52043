@@ -111,7 +111,10 @@ class RunWindow:
         return name if name in enabled else None
 
     def close(self):
-        cv2.destroyWindow(self.title)
+        try:
+            cv2.destroyWindow(self.title)
+        except cv2.error:           # already gone: closed with its own X button
+            pass
 
     def _on_mouse(self, event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
