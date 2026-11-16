@@ -175,7 +175,7 @@ def test_parking_after_a_start_folds_the_elbow_before_the_slides_first_move(monk
 
 
 def test_a_swing_keeps_to_the_limits_and_clear_of_the_tower():
-    assert "elbow" in swing(-50.0, 139.0, 90.0, PARKED, HOVER_SLIDE)
+    assert "elbow" in swing(-50.0, 141.0, 90.0, PARKED, HOVER_SLIDE)
     assert "base" in swing(69.0, 110.0, 90.0, PARKED, HOVER_SLIDE)
     assert "wrist" in swing(-50.0, 97.0, 130.0, PARKED, HOVER_SLIDE)
     assert "keep-out" in swing(40.0, 60.0, 0.0, (0.0, 60.0), HOVER_SLIDE)
@@ -209,7 +209,7 @@ def test_later_moves_are_small_and_inside_the_safe_range():
 
 def test_arm_moves_stay_in_range_and_clear_of_the_tower():
     assert arm_refusal("base", -45.0, 0.0, 110.0, ARM, ZONES) is None
-    assert "range" in arm_refusal("elbow", 139.0, -45.0, 110.0, ARM, ZONES)
+    assert "range" in arm_refusal("elbow", 141.0, -45.0, 110.0, ARM, ZONES)
     assert "range" in arm_refusal("base", 69.0, 0.0, 110.0, ARM, ZONES)
     assert "keep-out" in arm_refusal("base", 40.0, 0.0, 60.0, ARM, ZONES)
 
