@@ -71,7 +71,7 @@ MAX_STEP = {"wrist": 180.0, "slide": 75.0}    # after the first move the firmwar
 # The slide's step limit is for going down, toward the plate, where it sticks and jumps (approach a height
 # going down). Going up moves away from everything, so it goes in one move: each move costs about 2 s (its
 # time and the firmware's settling), and the climbs in a cycle took 7 moves in 30 deg steps (2026-11-11).
-ELBOW_MAX = 138.0           # the stop is 141; it reached 137.7 on 2026-11-02 (the play build turns round under 139). SCARA_AUTO_CALIBRATE only measures it to 120
+ELBOW_MAX = 140.0           # the stop is 141.1; it reached 137.7 on 2026-11-02 (the play build turns round under 139); 140 since 2026-11-16 for the plate's near edge. SCARA_AUTO_CALIBRATE only measures it to 120
 GLIDE_SLIDE = 45.0          # about 9 mm above the plate: a move may cross it this low, clear of a body 2.4 mm tall
 HOVER_SLIDE = 20.0          # the tip about 16 mm above the plate (camera and eye, 2026-11-05): travel height
 OVER_PLATE_SLIDE = 63.0     # the bottom level: the tip almost on the plate, set by eye (2026-11-05). Reach it going down

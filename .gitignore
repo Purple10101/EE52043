@@ -66,3 +66,6 @@ robot_control/config/rig_map.json
 # Experiments: investigations, kept on this machine, not in git (from 2026-11-11). One folder each,
 # experiments/YYYY-MM-DD_topic/, with a README.md (goal, outcome, evidence) and the scripts that reproduce it.
 experiments/
+
+# A friend's calibration kit (firmware, API, scripts): kept local, never committed
+external_files/
