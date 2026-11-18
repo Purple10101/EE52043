@@ -67,5 +67,10 @@ robot_control/config/rig_map.json
 # experiments/YYYY-MM-DD_topic/, with a README.md (goal, outcome, evidence) and the scripts that reproduce it.
 experiments/
 
+# robot_offline's local output: captures and datasets, training runs, start weights (released models go in models/)
+/data/
+/runs/
+/weights/
+
 # A friend's calibration kit (firmware, API, scripts): kept local, never committed
 external_files/

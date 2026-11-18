@@ -2,4 +2,7 @@ numpy
 pyserial
 opencv-python
 requests
+shapely
+matplotlib
+ultralytics
 pytest

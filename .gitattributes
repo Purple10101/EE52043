@@ -12,6 +12,7 @@
 *.hex binary
 *.gif binary
 *.stl binary
+*.pt binary
 *.3mf binary
 # STEP is text, but its diffs are meaningless entity renumbering
 *.step -diff

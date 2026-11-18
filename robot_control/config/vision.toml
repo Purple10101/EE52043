@@ -1,7 +1,7 @@
 # The overhead camera's detector. Camera settings, plate model, work area and tiles come from the
-# robot_offline repo's configs/ (installed with pip install -e), so training and the robot match.
+# robot_offline package's configs/ (robot_offline/configs/), so training and the robot match.
 
-weights = "models/seg_grey_v2/best.pt"   # relative paths are in the robot_offline repo
+weights = "models/seg_grey_v2/best.pt"   # relative paths are from the repo root
 conf = 0.5                # below about 0.3 the plate's rim shows up as false bodies
 
 # The band reader's value is trusted at this confidence or more; under it the part is to be measured. The
