@@ -48,7 +48,14 @@ SNAPSHOT_WAIT_S = 6.0
 def read_seen():
     """Where the camera sees the tip on the plate now (scene mm), from READINGS snapshots taken after
     this call. Exits if it can't see one."""
-    seen, last = [], time.time()
+    return read_seen_and_jaw()[0]
+
+
+def read_seen_and_jaw():
+    """read_seen's tip; the jaw line's scene direction (deg, 0..180) and the jaws' centre, the wrist's axis
+    measured from the jaw bodies' corners (scene mm, seen as the tip is), if tip_view reports them (gripper v5),
+    else None: medians of the same snapshots."""
+    seen, jaw, centre, last = [], [], [], time.time()
     deadline = last + READINGS * SNAPSHOT_WAIT_S
     while len(seen) < READINGS:
         if time.time() > deadline:
@@ -66,7 +73,21 @@ def read_seen():
         if not m:
             sys.exit(f"Stopped: {line}")
         seen.append((float(m[1]), float(m[2])))
-    return np.array([statistics.median(c) for c in zip(*seen)])
+        j = re.search(r"jaw (-?[\d.]+) deg", line)
+        if j:
+            jaw.append(float(j[1]))
+        c = re.search(r"centre \((-?[\d.]+), (-?[\d.]+)\)", line)
+        if c:
+            centre.append((float(c[1]), float(c[2])))
+    return (np.array([statistics.median(c) for c in zip(*seen)]),
+            median_direction(jaw) if len(jaw) == len(seen) else None,
+            np.array([statistics.median(c) for c in zip(*centre)]) if len(centre) == len(seen) else None)
+
+
+def median_direction(degs):
+    """The median of a line's directions (the same turned 180 deg), taken near the first, 0..180."""
+    ref = degs[0]
+    return statistics.median([ref + (d - ref + 90.0) % 180.0 - 90.0 for d in degs]) % 180.0
 
 
 def record(target, tip, base, elbow, state, height, error):

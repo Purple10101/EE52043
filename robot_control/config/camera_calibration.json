@@ -1,25 +1,25 @@
 {
-  "rotation_deg": -177.26079096562242,
+  "rotation_deg": 179.45946123424713,
   "translation_m": [
-    -0.001307788173659582,
-    -0.002692474555839425
+    -0.0028019210494868775,
+    -0.0035519634225046337
   ],
-  "base_scale": 1.0445286164257646,
-  "elbow_offset_deg": -0.6537773774384952,
-  "date": "2026-11-13",
-  "pairs": "camera_calibration_20261106_012205.csv",
-  "rms_mm": 1.33,
-  "worst_mm": 2.22,
-  "left_out_rms_mm": 1.62,
+  "base_scale": 1.0,
+  "elbow_offset_deg": 0.0,
+  "date": "2026-11-18",
+  "pairs": "camera_calibration_20261118_231425.csv",
+  "rms_mm": 0.77,
+  "worst_mm": 1.32,
+  "left_out_rms_mm": 1.04,
   "shifted": {
     "by_mm": [
-      -0.38,
-      0.36
+      -1.5,
+      0.29
     ],
-    "on": "2026-11-13 09:51",
-    "pairs": "aim_check_20261113_094827.csv",
-    "rms_before_mm": 1.03,
-    "rms_after_mm": 0.88,
-    "fitted_on": "2026-11-12"
+    "on": "2026-11-18 23:53",
+    "pairs": "aim_check_20261118_235006.csv",
+    "rms_before_mm": 1.6,
+    "rms_after_mm": 0.48,
+    "fitted_on": "2026-11-18"
   }
 }

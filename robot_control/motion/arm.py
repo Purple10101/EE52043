@@ -136,17 +136,18 @@ class Arm:
             return False
 
     def touch(self, point_mm, lens_mm):
-        """The closed tip down at a plate point, face-on to the camera, as camera_calibrate's check visits
-        one: up to the travel height, over the point with the wrist taking up its play the same way each
-        time, down to the pick height, the base and elbow landed on their angles. Stays there for the camera.
-        Returns the potentiometers' (base, elbow) and the wrist, read there. Raises ArmError if refused."""
-        from robot_control.vision.guide import plan_point
+        """The closed tip down at a plate point, the jaws square to the plate (guide.CALIBRATION_JAW_DEG), as
+        camera_calibrate's check visits one: up to the travel height, over the point with the wrist taking up
+        its play the same way each time, down to the pick height, the base and elbow landed on their angles.
+        Stays there for the camera. Returns the potentiometers' (base, elbow) and the wrist, read there. Raises
+        ArmError if refused."""
+        from robot_control.vision.guide import CALIBRATION_JAW_DEG, plan_square
         b, n = self.bench, self.navigator
         try:
-            base, elbow, wrist = plan_point(point_mm, lens_mm, n.kinematics, n.rig, n.correction)
+            base, elbow, wrist = plan_square(point_mm, CALIBRATION_JAW_DEG, lens_mm, n.kinematics, n.rig, n.correction)
             n.parked = False
             if n.gripper is not None:
-                n.gripper.close()           # the camera finds the tip by the closed jaws' V
+                n.gripper.close()           # the camera finds the tip by the closed jaws
             n.lift()
             b.approach(n.scara, base, elbow, wrist, b.SWING_S)
             n.drive("slide", b.OVER_PLATE_SLIDE, 1.0)

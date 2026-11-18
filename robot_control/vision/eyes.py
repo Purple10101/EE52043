@@ -191,6 +191,18 @@ class Eyes:
         frame, cal = self._picture()
         return find_tip(frame, cal, near_mm, height_mm)
 
+    def find_tip_and_axis(self, near_mm, height_mm=0.0):
+        """find_tip's tip, and the wrist's axis as the camera measures it, scene mm: for gripper v5 the jaws'
+        centre from their bodies' corners (vision/jaws.py), which needs no wrist model; for v4, None (the
+        caller takes the model's tip offset off the tip). Raises tip.TipNotFound or EyesError."""
+        from robot_control.vision.tip import configured_finder, find_tip
+        frame, cal = self._picture()
+        if configured_finder() == "jaws":
+            from robot_control.vision.jaws import find_jaws
+            found = find_jaws(frame, cal, near_mm, height_mm)
+            return found.tip_mm, found.centre_mm
+        return find_tip(frame, cal, near_mm, height_mm), None
+
     def lens_mm(self):
         """Where the plate's fit puts the camera, scene mm (finding the plate first if it hasn't been)."""
         cal = self.tracker.cal if self.tracker.cal is not None else self._picture()[1]

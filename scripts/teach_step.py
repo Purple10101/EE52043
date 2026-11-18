@@ -54,7 +54,7 @@ from robot_control.vision.guide import plan_jaws  # noqa: E402
 SESSION = ROOT / "logs" / "pick_teach_session.json"
 # The jaws closed, the tip stopped here (going down) over the resistor: about 7 mm above the plate (52 was a little low, the user), clear of a body
 # 2.4 mm tall. A closed tip is one point, easier to judge than open jaws; at the pick height (63) it would hit the body.
-TEACH_SLIDE = 48.0
+TEACH_SLIDE = 44.0          # 48 with v4; gripper v5 sits 4 deg lower (2026-11-18)
 
 
 def close_jaws(n):

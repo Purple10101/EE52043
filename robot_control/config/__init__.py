@@ -127,12 +127,13 @@ class GripperSettings:
     tip_below_shaft: float          # fingertips below the Z shaft's bottom face, m
     symmetric: bool                 # gripping at yaw + 180 deg is the same grip
     jaw_axis_at_zero_deg: float     # robot-frame direction the jaws close along at tool angle 0
+    tip_finder: str = "v"           # how the camera finds the tip: "v" (v4's black V, tip.py), "jaws" (v5, jaws.py)
 
     @classmethod
-    def from_config(cls, name="parallelogram_v4"):
+    def from_config(cls, name="rack_pinion_v5"):
         t = load(name, CONFIG_DIR / "grippers")
         return cls(name, tuple(float(v) / 1000 for v in t["tool_offset_mm"]), float(t["tip_below_shaft_mm"]) / 1000,
-                   bool(t["symmetric"]), float(t["jaw_axis_at_zero_deg"]))
+                   bool(t["symmetric"]), float(t["jaw_axis_at_zero_deg"]), str(t.get("tip_finder", "v")))
 
 
 @dataclass(frozen=True, eq=False)

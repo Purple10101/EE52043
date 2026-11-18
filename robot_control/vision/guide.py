@@ -19,16 +19,25 @@ MAX_STEP_MM = 5.0
 # confirmed by the user 2026-11-12): the closed fingertips are 12 mm wide and centred on the mount's axis, and
 # the V the camera finds is their end nearest the camera, 6.0 mm out. A circle fitted to the tip as the wrist
 # turned (2026-11-05) gave 6.8, through a guessed tip height. The direction is that circle's.
+# Gripper v5 (2026-11-18): the same 6.0 mm by its CAD (points 12 mm deep, centred on the axis; the tip the camera
+# finds, jaws.py, is the end nearest it). The direction from the wrist calibration below: at wrist -15, base +
+# elbow 66.94, the jaws close along y and the spring-slot face is square to the camera, so the tip is toward -x.
+# v4's were 187.6 at wrist 70, tool 64.8.
 TIP_OFFSET_MM = 6.0
-TIP_ANGLE_DEG = 187.6
-WRIST_REF_DEG = 70.0
-TOOL_REF_DEG = 64.8
-WRIST_SCALE = 1.14          # by eye against the crosshair, 2026-11-06: 71 deg turned about 80, then 80 turned about 92
-# The jaws close along JAW_ANGLE_DEG at wrist JAW_WRIST_DEG with base + elbow at JAW_TOOL_DEG: the
-# gripper's shoulder square to the crosshair's y groove, base -49.7, elbow 112.1, wrist 78.2.
+TIP_ANGLE_DEG = 180.0
+WRIST_REF_DEG = -15.0
+TOOL_REF_DEG = 66.94
+WRIST_SCALE = 1.0           # gripper v5, by the user's eye against the crosshair, 2026-11-18: 90 firmware deg (-15 to 75)
+                            # turned the jaws from the y groove to the x groove, 79 was short. 1.14 with v4 (2026-11-06)
+# The jaws close along JAW_ANGLE_DEG at wrist JAW_WRIST_DEG with base + elbow at JAW_TOOL_DEG. Gripper v5,
+# 2026-11-18, slide down at 59, by the user's eye: jaws along the crosshair's y groove (and face-on to the
+# camera) at base -43.65, elbow 110.59, wrist -15, reached going up from -60. v4: wrist 78.2 at tool 62.4.
 JAW_ANGLE_DEG = 90.0
-JAW_WRIST_DEG = 78.2
-JAW_TOOL_DEG = 62.4
+# While the camera measures the gripper (camera_calibrate.py, the aim check) the jaws close along this scene
+# direction: square to the plate, along its y edges (the user's choice, 2026-11-18).
+CALIBRATION_JAW_DEG = 90.0
+JAW_WRIST_DEG = -15.0
+JAW_TOOL_DEG = 66.94
 SOLVE_STEPS = 6
 
 
@@ -62,6 +71,21 @@ def plan_point(tip_mm, lens_mm, kinematics, rig, correction=JointCorrection()):
     toward /= np.linalg.norm(toward)
     base, elbow = pots_for(tip - TIP_OFFSET_MM * toward, kinematics, rig, correction)
     wanted = math.degrees(math.atan2(toward[1], toward[0]))
+    turn = (tip_angle(base, elbow, WRIST_REF_DEG) - wanted + 180.0) % 360.0 - 180.0
+    return base, elbow, WRIST_REF_DEG + turn / WRIST_SCALE
+
+
+def plan_square(tip_mm, jaw_deg, lens_mm, kinematics, rig, correction=JointCorrection()):
+    """(base, elbow, wrist) deg that put the tip at scene mm tip_mm with the jaws closing along scene
+    direction jaw_deg (90: square to the plate's x edges), the face the camera finds them by (the tip's side)
+    on the camera's side of the jaw line. Raises ValueError if out of reach."""
+    tip = np.asarray(tip_mm, float)
+    toward = np.asarray(lens_mm[:2], float) - tip
+    wanted = jaw_deg + 90.0         # the tip lies square to the jaw line: of the two ways, the camera's
+    if math.cos(math.radians(wanted)) * toward[0] + math.sin(math.radians(wanted)) * toward[1] < 0:
+        wanted -= 180.0
+    a = math.radians(wanted)
+    base, elbow = pots_for(tip - TIP_OFFSET_MM * np.array([math.cos(a), math.sin(a)]), kinematics, rig, correction)
     turn = (tip_angle(base, elbow, WRIST_REF_DEG) - wanted + 180.0) % 360.0 - 180.0
     return base, elbow, WRIST_REF_DEG + turn / WRIST_SCALE
 

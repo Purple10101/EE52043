@@ -7,10 +7,13 @@ the same few mm. On 2026-11-11 that made a pick miss: experiments/2026-11-11_pic
 (2.8 mm, nearly all one steady shift; 1.1 mm rms left once the shift was taken out).
 
 The check, a minute or two:
-1. The jaws closed, the tip put down at each of CHECK_POINTS in turn, face-on to the camera, at the pick
-   height (Arm.touch: the five points camera_calibrate's check uses, which its fit never saw).
-2. At each, the camera finds the tip in an averaged picture (Eyes.find_tip) and the potentiometers are read.
-   A point where the tip can't be found is skipped.
+1. The jaws closed, the tip put down at each of CHECK_POINTS in turn, the jaws square to the plate
+   (guide.CALIBRATION_JAW_DEG), at the pick height (Arm.touch: the five points camera_calibrate's check uses,
+   which its fit never saw).
+2. At each, the camera finds the tip in an averaged picture (Eyes.find_tip_and_axis) and the potentiometers are
+   read. With gripper v5 it also measures the wrist's axis, the jaws' centre from their bodies' corners, which is
+   used as it is; with v4 the axis is the tip less the wrist model's offset. A point where the tip can't be found
+   is skipped.
 3. Each pair gives the error: where the calibration says the wrist axis is, against where the camera saw
    it. Their mean is the shift; what is left after taking it out is what a shift can't fix.
 4. If the shift is worth taking out (SHIFT_WORTH_MM), the calibration's translation is moved by it
@@ -41,7 +44,7 @@ PICK_HEIGHT_MM = 1.0        # the tip above the plate at the pick height (camera
 MIN_POINTS = 3              # fewer tips found than this: no verdict
 SHIFT_WORTH_MM = 0.5        # a shift smaller than this is left alone
 LEFT_OK_MM = 2.0            # rms left after the shift: more than this and the calibration needs redoing
-FIELDS = ["target_x", "target_y", "tip_x", "tip_y", "base", "elbow", "wrist", "slide", "height"]
+FIELDS = ["target_x", "target_y", "tip_x", "tip_y", "base", "elbow", "wrist", "slide", "height", "centre_x", "centre_y"]
 
 
 @dataclass
@@ -81,7 +84,7 @@ class AimCheck:
                 say(f"aim check {i} of {len(CHECK_POINTS)}: the tip down at ({point[0]:g}, {point[1]:g})")
                 base, elbow, wrist = self.arm.touch(point, lens)
                 try:
-                    tip = self.eyes.find_tip(point, PICK_HEIGHT_MM)
+                    tip, measured = self.eyes.find_tip_and_axis(point, PICK_HEIGHT_MM)
                 except TipNotFound as why:
                     say(f"aim check {i}: tip not found ({why}), skipped")
                     tips.append(None)
@@ -89,10 +92,11 @@ class AimCheck:
                 finally:
                     self.arm.lift()
                 tips.append(tuple(float(v) for v in tip))
-                axes.append(axis_mm(tip, base, elbow, wrist))
+                axes.append(axis_mm(tip, base, elbow, wrist) if measured is None else np.asarray(measured, float))
                 joints.append((base, elbow))
+                centre = ("", "") if measured is None else (round(float(measured[0]), 2), round(float(measured[1]), 2))
                 out.writerow([point[0], point[1], round(tip[0], 2), round(tip[1], 2), round(base, 2), round(elbow, 2),
-                              round(wrist, 2), self.arm.bench.OVER_PLATE_SLIDE, PICK_HEIGHT_MM])
+                              round(wrist, 2), self.arm.bench.OVER_PLATE_SLIDE, PICK_HEIGHT_MM, *centre])
                 f.flush()
         self.arm.park()
         return self.judge(CHECK_POINTS, tips, np.array(axes), np.array(joints), nav, pairs_path, say)
@@ -102,7 +106,7 @@ class AimCheck:
         if len(axes) < MIN_POINTS:
             report = AimReport(points, tips, np.zeros((0, 2)), np.zeros(2), float("nan"), float("nan"),
                                verdict=f"only {len(axes)} of {len(points)} tips found: no verdict. Is the gripper "
-                                       "face-on to the camera with its jaws closed, the plate clear?")
+                                       "closed and square to the plate, the plate clear?")
             say(report.verdict)
             return report
         before = errors_mm(axes, joints, nav.kinematics, nav.rig, nav.correction)

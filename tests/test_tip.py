@@ -137,6 +137,6 @@ def test_find_tip_corrects_for_height():
     cal = rectify.Calibration(np.eye(3), np.zeros((4, 2)), ST.size, ST, fit={"camera_mm": list(LENS)})
     image = plate()
     gripper(image)
-    low, high = find_tip(image, cal, TIP), find_tip(image, cal, TIP, height_mm=20.0)
+    low, high = find_tip(image, cal, TIP, finder="v"), find_tip(image, cal, TIP, height_mm=20.0, finder="v")
     above = LENS[2] - ST.top_z_mm
     assert high - low == pytest.approx((np.array(LENS[:2]) - low) * 20.0 / above, abs=1e-6)

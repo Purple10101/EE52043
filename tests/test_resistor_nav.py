@@ -67,7 +67,7 @@ def test_the_waiting_view_fits_a_wide_camera_frame_into_the_plate_view():
 sent = []
 
 
-def run_to_bin(monkeypatch, landed, slide=20.0):
+def run_to_bin(monkeypatch, landed, slide=resistor_nav.bench.HOVER_SLIDE):
     """to_bin with the arm faked, landing at landed (base, elbow): the moves it made, in order."""
     made = []
     sent.clear()
@@ -186,7 +186,7 @@ def holding_nav(monkeypatch, landed=(20.0, 100.0), path=((20.0, 100.0),)):
     monkeypatch.setattr(resistor_nav, "bin_path", lambda *a: None if path is None else list(path))
     monkeypatch.setattr(resistor_nav.time, "sleep", lambda s: None)
     monkeypatch.setattr(bench, "read_joints", lambda *a: landed)
-    monkeypatch.setattr(bench, "load_state", lambda: {"wrist": 50.0, "slide": 20.0})
+    monkeypatch.setattr(bench, "load_state", lambda: {"wrist": 50.0, "slide": bench.HOVER_SLIDE})
     monkeypatch.setattr(bench, "swing", lambda *a: made.append("swing"))
     nav = Navigator(None, None, None, None, FakeJaws(made))
     monkeypatch.setattr(nav, "drive", lambda joint, angle, seconds: made.append((joint, angle)))

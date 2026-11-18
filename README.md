@@ -327,7 +327,11 @@ prints this line with the file's name filled in):
 .venv\Scripts\python scripts\tip_view.py --snapshot --lock --calibration logs\tips\plate_<time>_rectify.json
 ```
 
-It holds the camera and finds the tip by the closed jaws' V. The steps below close the jaws themselves.
+It holds the camera and finds the closed jaws (gripper v5: the jaw bodies' two bottom corners and the two
+points, `robot_control/vision/jaws.py`; the gripper config's `tip_finder` chooses). The steps below close the
+jaws themselves and turn them square to the plate (closing along its y edges); the camera checks that and turns
+the wrist again if they are more than 3 deg off. It also measures the jaws' centre, the wrist's axis, from the
+corners, which the fit uses as it is.
 
 **4. Check the arm against the plate.** Clear the middle of the plate (the tip comes down almost onto
 it, within 25 mm of the crosshair), then:
@@ -350,9 +354,12 @@ the joints aren't landing (redo 1). If "calibration alone" is above about 1.5 mm
 ```
 
 `run` visits 12 points round the plate and records where the camera saw the tip at each, against the
-potentiometers (a point it can't see is skipped). `fit` prints how well the joints' fit matches them, and
-how well each point is predicted when left out. Good: about 1.5 mm rms, worst under 2.5 for both. `--save`
-writes it to `robot_control/config/camera_calibration.json`, which everything that plans a move uses.
+potentiometers (a point it can't see is skipped; the raw frame of every point is kept in `logs/tips/`). `fit`
+prints how well the joints' fit matches them, and how well each point is predicted when left out. Good: about
+1.5 mm rms, worst under 2.5 for both. `--save` writes it to `robot_control/config/camera_calibration.json`,
+which everything that plans a move uses. With few pairs (under about 8), the joint fit's two extra numbers
+overfit: compare the two "left out" figures and use `--save --rigid` if the rigid one is lower (2026-11-18:
+5 pairs, rigid 1.04 mm left out against 1.57).
 Then `check` again, as in 4.
 
 **6. Finish.** Press `q` in the tip view to free the camera. `resistor_nav.py` finds the plate again
@@ -388,6 +395,12 @@ of the tower:
 .venv\Scripts\python scripts\slide_wrist.py park
 .venv\Scripts\python scripts\slide_wrist.py move wrist 0
 ```
+
+`start` also tells the firmware the elbow's play (4.5 deg, measured 2026-11-18), and in doing so checks that the
+Nucleo runs the PLAY firmware: the host's settings (no PID gains) are for it alone. If it stops with "isn't
+running the PLAY firmware", copy `firmware/build_play/servo_motion_controller.bin` onto the Nucleo's drive and
+start again. With any other firmware the base and elbow stop short of their targets (on 2026-11-18 the kit
+firmware was on the board and the elbow stopped 4 deg short of every downward move).
 
 After a power-off the slide and wrist are limp, so raise the slide fully by hand before `start`. Their
 first moves snap them to 0 at full speed. To redo `start` with the Nucleo still running, bring the slide

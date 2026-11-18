@@ -1,5 +1,7 @@
 """Finds the closed gripper's tip on the plate, in a raw frame, near where the arm says it should be.
 
+This module is gripper v4's finder (the black V); find_tip hands gripper v5 to jaws.py, by the gripper config.
+
 The gripper is black and the plate white, so it's what is solid and dark on the plate, in one piece or
 several (a light cable lying across it splits it). The camera looks at an angle: anything above the
 plate lands further from the camera's foot than it is, so the end nearest the foot is the lowest
@@ -103,9 +105,20 @@ def tip_in_rectified(rectified, settings, lens_mm, near_mm, ignore=()):
     return rectify.rect_to_mm([apex], settings)[0], width
 
 
-def find_tip(frame, cal, near_mm, height_mm=0.0, ignore=()):
+def configured_finder():
+    """The tip finder the configured gripper needs (config/grippers/<name>.toml's tip_finder): "v" for v4's
+    black V (this module), "jaws" for v5's blue-grey jaws (jaws.py)."""
+    from robot_control.config import GripperSettings
+    return GripperSettings.from_config().tip_finder
+
+
+def find_tip(frame, cal, near_mm, height_mm=0.0, ignore=(), finder=None):
     """Scene mm (x, y) of the tip in a raw frame, height_mm above the plate, where near_mm is where it
-    should be. ignore: as for tip_in_rectified. Raises TipNotFound."""
+    should be. ignore: as for tip_in_rectified. finder: "v" or "jaws" (default: the configured gripper's).
+    Raises TipNotFound."""
+    if (finder or configured_finder()) == "jaws":
+        from robot_control.vision.jaws import find_jaws
+        return find_jaws(frame, cal, near_mm, height_mm, ignore).tip_mm
     lens = camera_mm(cal)
     z = cal.settings.top_z_mm
     seen_near = correct_height([near_mm], lens, z, -height_mm)[0]       # near enough, for a search area

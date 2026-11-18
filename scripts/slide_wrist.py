@@ -62,7 +62,7 @@ ST_LINK_VID = 0x0483
 AXES = {"base": 0, "elbow": 1, "wrist": 2, "slide": 3}
 # Degrees, widened as the real travel is found. The slide's negative angles are up (seen 2026-11-05),
 # as z_max maps to -60; the tip is about 25 mm above the plate at -10, about 0.3 mm a degree.
-SAFE = {"wrist": (-90.0, 120.0), "slide": (-50.0, 63.0)}
+SAFE = {"wrist": (-90.0, 120.0), "slide": (-50.0, 59.0)}
 MAX_STEP = {"wrist": 180.0, "slide": 75.0}    # after the first move the firmware ramps them
 # The slide's step going down was 30 deg while its travel was being found; 75 since 2026-11-11, for speed:
 # every move costs about 1 s of the firmware's settling on top of its own time, and the descents a cycle
@@ -72,9 +72,10 @@ MAX_STEP = {"wrist": 180.0, "slide": 75.0}    # after the first move the firmwar
 # going down). Going up moves away from everything, so it goes in one move: each move costs about 2 s (its
 # time and the firmware's settling), and the climbs in a cycle took 7 moves in 30 deg steps (2026-11-11).
 ELBOW_MAX = 140.0           # the stop is 141.1; it reached 137.7 on 2026-11-02 (the play build turns round under 139); 140 since 2026-11-16 for the plate's near edge. SCARA_AUTO_CALIBRATE only measures it to 120
-GLIDE_SLIDE = 45.0          # about 9 mm above the plate: a move may cross it this low, clear of a body 2.4 mm tall
-HOVER_SLIDE = 20.0          # the tip about 16 mm above the plate (camera and eye, 2026-11-05): travel height
-OVER_PLATE_SLIDE = 63.0     # the bottom level: the tip almost on the plate, set by eye (2026-11-05). Reach it going down
+GLIDE_SLIDE = 41.0          # about 9 mm above the plate (45 with v4; 4 deg less with v5 rev 3, as the bottom level): a move may cross it this low, clear of a body 2.4 mm tall
+HOVER_SLIDE = 16.0          # the tip about 16 mm above the plate (20 with v4, by camera and eye 2026-11-05): travel height
+OVER_PLATE_SLIDE = 59.0     # the bottom level: the tips just above the plate, set by eye for gripper v5 rev 3 going down
+                            # in 2 deg steps (2026-11-18, base -45, elbow 110). v4 was 63
 NUDGE_DEG = 4.0             # a base or elbow move this small may be made low over the plate: camera guidance
 PLATE_MM = ((-50.0, 50.0), (-180.0, -80.0))     # scene x and y of the plate's top
 PLATE_MARGIN_MM = 40.0      # the gripper's reach from its axis, the SG90 side, with some to spare
@@ -89,14 +90,19 @@ SWING_S = 2.0               # a base move across the plate, at the least (3.0 un
 SWING_DEG_PER_S = 40.0      # a long swing takes its biggest joint's change at this (the firmware allows 90)
 SLIDE_STEP_S = 1.0
 QUICK_READS = 5             # potentiometer readings for the checks around a move; measuring takes the default
-WRIST_START = -60.0         # the wrist has about 30 deg of play: every target is reached going up from here
+WRIST_START = -70.0         # every wrist target is reached going up from here, so any play is taken up the same way
+                            # (-60 until 2026-11-18: gripper v5's face-on wrist reaches -62 at the plate's near corner)
 WRIST_TURN_S = 2.0
 LAND_TOLERANCE_DEG = 0.35   # the firmware stops within about 0.5 deg of a target, often short: land() does better
 LAND_GAIN = 0.7             # of the error, each try: more overshoots and has to come back
 LAND_TRIES = 5
 LAND_MAX_DEG = 2.0          # the most land() adds to a target: more means the joint isn't following
 LAND_S = 1.0
-SETTLE_S = 1.0              # the course's value: base moves past 30 deg land short with less
+SETTLE_S = 1.0
+# The PLAY firmware's elbow play is 1.1 deg (measured 2026-11-12); on 2026-11-18 a downward elbow step fell
+# 4.0-4.6 deg short and 4 deg steps down didn't move it at all, while upward ones landed within 0.4 deg. start
+# sends this (SCARA_SET_PLAY, firmware/README.md section 5), so downward moves turn round past the play.
+ELBOW_PLAY_DEG = 4.5              # the course's value: base moves past 30 deg land short with less
 STATE = ROOT / "logs" / "slide_wrist_state.json"
 
 
@@ -245,10 +251,31 @@ def start(scara):
     quiet(scara.SCARA_INITIALISE, arm.link1, arm.link2, arm.z[0], arm.z[1], SETTLE_S, *smc_api.GAINS)
     print("Calibrating: the base and elbow sweep end to end...")
     quiet(scara.SCARA_AUTO_CALIBRATE)
+    set_elbow_play(scara)
     save_state({"wrist": None, "slide": None, "started": time.strftime("%Y-%m-%d %H:%M")})
     base, elbow = read_joints(scara)
     record("start", "", "", base, elbow)
     print(f"Done: base {base:.2f}, elbow {elbow:.2f} deg")
+
+
+def set_elbow_play(scara):
+    """Sends ELBOW_PLAY_DEG to the PLAY firmware, which also proves it is the PLAY firmware: the host's settings
+    (GAINS all 0, TIME_SCALE 2.0) are for it alone. On 2026-11-18 the kit firmware was found on the board: it
+    answers SCARA_SET_PLAY with 8 bytes more, and with GAINS 0 nothing pulls its joints onto their targets
+    (the elbow stopped 4 deg short of every downward move). Exits, with what to do, if it isn't."""
+    flash = "flash firmware/build_play/servo_motion_controller.bin onto the Nucleo (firmware/README.md, section 1)"
+    timeout, scara.api.timeout = scara.api.timeout, 3.0
+    try:
+        quiet(scara.SCARA_SET_PLAY, AXES["elbow"], ELBOW_PLAY_DEG, 1)
+    except (TimeoutError, ValueError) as why:
+        sys.exit(f"The Nucleo didn't take SCARA_SET_PLAY ({why}): it isn't running the PLAY firmware. {flash}.")
+    finally:
+        scara.api.timeout = timeout
+    time.sleep(0.3)
+    if scara.api.in_waiting:
+        stray = scara.api.read(scara.api.in_waiting)
+        sys.exit(f"The Nucleo answered SCARA_SET_PLAY with {len(stray)} bytes more, as the kit firmware does: it isn't "
+                 f"running the PLAY firmware, so the base and elbow would stop short of their targets. {flash}.")
 
 
 def move(scara, joint, angle, seconds):
