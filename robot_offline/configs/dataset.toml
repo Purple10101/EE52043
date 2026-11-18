@@ -1,0 +1,125 @@
+# Dataset building: work area, tiling, splits, labels and synthetic data.
+
+[work_area]
+# Box in the frame where resistors lie, the same for every frame. Synthetic resistors (body and
+# leads) are kept wholly inside it, and tiles are cut from it. Rectified px (see [rectify]): the
+# plate's top surface. Must fit the rectified frame.
+x0 = 100
+y0 = 100
+width = 1000
+height = 1000
+
+[scale]
+px_per_mm = 10.0          # rectified images; equal to [rectify] px_per_mm
+
+[rectify]
+# Straight-down view of the pick plate, see rectify.py. The corners of the plate's top surface in
+# the rig scene frame (mm, z up, origin at the robot base), listed in the order they appear in the
+# camera image: top-left, top-right, bottom-right, bottom-left. From the tower the far edge
+# (x = 50) is at the top of the image and the robot-base side (y = -80) on the left. Moving the
+# camera to another side of the plate changes this order.
+plate_corners_mm = [[50.0, -80.0], [50.0, -180.0], [-50.0, -180.0], [-50.0, -80.0]]
+px_per_mm = 10.0          # rectified scale; the camera gives about 8 (far corner) to 13 (near side)
+margin_mm = 10.0          # kept around the plate, for leads past its edge: 1200 x 1200 px
+# The plate as a solid, from the rig model (../arm_and_rig_scene/EduSCARA_resistorrig.obj, body Body1:1).
+# The camera is found by fitting where it must be for this solid to look as it does (rectify.py).
+plate_corner_radius_mm = 5.0  # its rounded corners; everything off the plate is masked before the model sees it
+plate_top_z_mm = -22.0    # height of its top
+plate_face_mm = 5.0       # its front face: the slab's underside is this far below the top
+# The crosshair groove in the top (1 mm wide, 3 mm deep): (0, -130) in the CAD, measured on the
+# printed plate on 2026-10-29 against its edges and face (16 frames, two lightings, spread 0.02 mm).
+crosshair_mm = [-0.48, -130.37]
+crosshair_arm_mm = 5.0    # each arm's length
+# Where the fit starts: the lens by design (camera_tower/README.md) and its focal length in raw px at
+# the camera.toml focus (fitted on 2026-10-29: 3597 px).
+camera_mm = [-145.0, -145.0, 178.0]
+focal_px = 3600.0
+
+[tiles]
+size = 1024               # px; one tile covers the plate (a 1/4 W body is about 65 x 25 px)
+overlap = 128             # px, larger than the longest body so every body is whole in some tile
+min_visible_fraction = 0.6  # a body clipped by a tile edge is kept only if this much is inside
+
+[splits]
+# Split by session, never by frame, so test frames are from a session the model has not seen.
+# Synthetic frames are always train.
+val_sessions = []
+# Labelled real frames, never trained on. 2026-10-23_a/_b labels are synth_only_v1's own outlines
+# and _a tuned the synthetic look, so they only guard against getting worse.
+test_sessions = ["2026-10-23_a", "2026-10-23_b", "2026-10-29_ref", "2026-11-05_live", "2026-11-06_a",
+                 "2026-11-06_b", "2026-11-06_c"]
+
+[labels]
+classes = ["object"]      # rules version 2: every object of a pickable size (was ["resistor_body"])
+rules_version = 2         # bump when docs/labelling.md changes meaning
+simplify_epsilon_px = 1.0 # approxPolyDP tolerance when masks become polygons
+
+[autolabel]
+diff_threshold = 25       # Lab distance from the empty-table frame
+min_body_width_mm = 2.4   # opening kernel is half of this, removing leads but not bodies
+
+[synthetic]
+# Settings for `python -m robot_offline.training.synth`, which draws rectified frames ([rectify] geometry).
+# Lighting, colours and package sizes are constants at the top of src/robot_offline/training/synth.py.
+# Values were matched to the measured look of real rectified frames (2026-10-23_a).
+frames = 100
+bodies_per_frame = [4, 9]   # bodies that do not fit after 30 tries are skipped
+touching_fraction = 0.08  # chance a new body is placed against a lone body, making a pair
+overlap_fraction = 0.0    # chance it is placed partly over a lone body instead
+cluster_fraction = 0.12   # chance it is laid parallel beside a placed body, min_gap_mm to 6 mm away
+min_gap_mm = 3.0          # body-to-body gap between everything except the two in a pair
+lead_length_mm = [24, 38] # each lead, from the end cap; leads never cross a body, may cross leads
+lead_curl_deg = 12        # typical sweep along a whole lead; leads lie mostly straight
+lead_bends = 1.0          # hand bends per lead, on average (each 1 to 3 mm long, about 25 degrees)
+kink_fraction = 0.25      # share of leads with a sharp bend 2 to 6 mm from the body
+empty_fraction = 0.05     # frames with no resistors, for false detections
+distractors_per_frame = [0, 4]  # small unlabelled clutter: lead offcuts, crumbs, pencil marks, smudges
+objects_fraction = 0.35   # chance a frame also has screws or wood shavings
+objects_per_frame = [1, 4]
+camera_xy_mm = [-145.0, -145.0]  # lens position over the rig (camera_tower/README.md)
+camera_height_mm = 200.0  # lens above the plate top
+# The camera simulation: frames are drawn render_scale times finer, warped into the camera's raw
+# view, blurred by focus, passed through the colour filter, sensor noise, the camera's sharpening
+# and MJPG, then rectified back. camera_corners_px is where the plate's corners sit in the raw frame
+# (image order, from the 2026-10-23_a calibration; each frame jitters it by about 10 px).
+camera_corners_px = [[1779.1, 562.9], [3061.3, 654.2], [3071.0, 1834.1], [1473.8, 1692.1]]
+render_scale = 1.5
+defocus = 4.0             # blur sigma in raw px per unit of |distance - focus| / distance
+focus_shift_mm = 15.0     # focus distance minus the lens-to-plate-centre distance; real frames are softer near
+mjpg_quality = [80, 92]
+sharpen = [1.8, 2.5]      # the camera's sharpening, unsharp-mask amount (radius 0.8 raw px)
+jpeg_quality = [88, 97]   # frames are saved as JPEG, like the camera's MJPG stream
+# Beyond the measured look, so that no body colour, size or light is the model's only cue.
+random_body_fraction = 0.6  # chance a body has any paint: every hue, pale to saturated, dark to light
+random_size_fraction = 0.5  # chance a body has any size in size_length_mm (1/8 W to above 1/2 W)
+size_length_mm = [3.2, 11.0]
+hard_light_fraction = 0.5   # chance of one or two hard lights with long cast shadows, and shiny leads
+shade_fraction = 0.35       # chance of broad soft shade over part of the plate, as from the arm
+tint_fraction = 0.5         # chance the light's colour changes across the plate
+exposure_fraction = 0.6     # chance the camera is under- or over-exposed
+seed = 0
+
+[synthetic_objects]
+# `synth --profile objects`: these over [synthetic], for the object model
+# (experiments/2026-11-09_object_seg_design). Every object of a pickable size is labelled, with its kind.
+objects_profile = true
+labelled_objects_per_frame = [1, 5]  # non-resistors per frame: diodes, capacitors, op-amps, transistors,
+                                     # screws, nuts, made-up shapes (synth.OBJECT_KINDS has their shares)
+object_size_mm = [2.0, 25.0]  # made-up shapes and cylinders, longest side (assumed "pickable size")
+edge_fraction = 0.25      # chance a body or object is placed close to a plate edge, at any angle
+edge_gap_mm = [0.5, 8.0]  # its nearest point this far from the edge; on the rig, bodies within 5 mm were missed
+leads_off_plate = 0.2     # chance a body's leads may run off the plate (cut by the plate mask, as on the rig);
+                          # one placed against an edge always may. Allowed for all, 72% of bodies had a lead off
+                          # the plate, far more than on the rig
+back_dark = [0.0, 0.12]   # light falls off away from the camera by up to this share (measured about 8%)
+
+[synthetic_objects_cut]
+# `synth --profile objects_cut`: [synthetic_objects] plus bodies cut off at the plate's far edge, as on the
+# rig (experiments/2026-11-09_seg_objects_v1_test, live edge test of 2026-11-09). A body lying at the far
+# (+x) edge appears up to 2.4 mm past it (parallax), and the plate mask cuts that part off; seg_objects_v1
+# had never seen one. The mask stays as it is: what lies past the plate (bench, gap, rig) changes from rig
+# to rig, so the model learns the cut body against plain plate grey instead.
+base = "objects"
+edge_fraction = 0.35      # more bodies against an edge than in [synthetic_objects] (0.25)
+edge_cut_fraction = 0.6   # of those, the share placed by where they lie, not how they appear
+edge_cut_gap_mm = [0.0, 1.5]  # their footprint this far from the edge: tops overhang at the far edge

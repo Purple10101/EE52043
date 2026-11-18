@@ -162,7 +162,7 @@ class KeepOutMap:
 
 @dataclass(frozen=True)
 class VisionSettings:
-    weights: Path                   # the segmentation model; relative paths are in the robot_offline repo
+    weights: Path                   # the segmentation model; relative paths are from the repo root
     conf: float
     min_confidence: float | None = None     # the band reader's limit for the sorting run; None: the reader's own
 

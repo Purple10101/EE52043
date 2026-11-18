@@ -2,7 +2,7 @@
 the move each resistor would get. Nothing is sent to the arm.
 
     python -m robot_control.task.plan_picks --live
-    python -m robot_control.task.plan_picks "../Robot Resources/robot_offline/data/reference/2026-10-29"
+    python -m robot_control.task.plan_picks data/reference/2026-10-29
 
 For each frame it prints one line per detected body (robot-frame centre, yaw, size, joints or the
 reason it can't be reached) and the ScaraController call that would put the open gripper above it,

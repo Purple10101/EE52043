@@ -31,7 +31,7 @@ class Detector:
 
     @property
     def weights(self):
-        """The segmentation weights' path; relative ones are in the robot_offline repo."""
+        """The segmentation weights' path; relative ones are from the repo root (models/...)."""
         w = self.vision.weights
         return w if w.is_absolute() else offline_config.ROOT / w
 
@@ -45,7 +45,7 @@ class Detector:
         if self._model is None:
             from ultralytics import YOLO
             if not self.weights.exists():
-                raise FileNotFoundError(f"{self.weights} not found (in the robot_offline repo, run git lfs pull)")
+                raise FileNotFoundError(f"{self.weights} not found (the models are in models/ at the repo root)")
             self._model = YOLO(str(self.weights))
         return self._model
 

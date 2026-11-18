@@ -122,6 +122,12 @@ The details of each part are under "The sorting run" below.
 - `hardware_api/` - Python APIs for the SCARA, provided by the course:
   - `scara_motion_controller_api.py` - real robot, over serial (needs `pyserial`).
   - `sim_scara_motion_controller_api.py` - Unity simulator, over TCP (127.0.0.1:9000).
+- `robot_offline/` - the vision pipeline from a raw frame to plate outlines: camera, plate calibration,
+  rectification, the segmentation model on tiles, band reading, and the tools and training that made the
+  models. Its settings are in `robot_offline/configs/`, its tests in `tests/offline/`. Nothing outside
+  `robot_offline/training/` imports from it (`tests/offline/test_imports.py` checks).
+- `models/` - the models the robot loads: `seg_grey_v2` (resistor bodies), `band_reader_kit_v1` (band
+  values) and `resistor_tag_v1`.
 - `course_files/` - everything else from the module repo (examples, CAD, simulator, firmware,
   machine vision). See `course_files/README.md`.
 - `firmware/` - the motion controller firmware flashed on the arm: the course's Moodle build
@@ -150,25 +156,14 @@ The details of each part are under "The sorting run" below.
 
 ## Setup
 
-On a new machine, follow [SETUP.md](SETUP.md): clone commands for Windows and Linux, the folder layout both
-repos need, and fixes for common clone errors. In short:
+On a new machine, follow [SETUP.md](SETUP.md) (Windows and Linux). In short, install the CUDA build of
+torch first, so ultralytics doesn't pull in the CPU one:
 
 ```
 py -3.11 -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-The vision (`robot_control/vision/`) uses the sibling repo
-[EE52043_offline](https://github.com/Purple10101/EE52043_offline) as a package: rectification, the
-segmentation model and its camera and plate settings all come from there, so training and the robot
-always match. Clone it next to this repo (`Robot Resources/robot_offline`), fetch its model with
-`git lfs pull` there, then install the CUDA build of torch first (so ultralytics doesn't pull in the
-CPU one) and the package as editable (its `configs/` are found through the source tree):
-
-```
 pip install torch==2.14.1 torchvision==0.29.1 --index-url https://download.pytorch.org/whl/cu126
-pip install -e "..\Robot Resources\robot_offline"
+pip install -r requirements.txt
 ```
 
 ## Dry run: from the camera to arm commands
