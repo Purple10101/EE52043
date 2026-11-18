@@ -150,6 +150,9 @@ The details of each part are under "The sorting run" below.
 
 ## Setup
 
+On a new machine, follow [SETUP.md](SETUP.md): clone commands for Windows and Linux, the folder layout both
+repos need, and fixes for common clone errors. In short:
+
 ```
 py -3.11 -m venv .venv
 .venv\Scripts\activate
