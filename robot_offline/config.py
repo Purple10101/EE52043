@@ -11,6 +11,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]           # the EE52043 repo: models/, data/, runs/ and weights/ are here
 CONFIG_DIR = Path(__file__).resolve().parent / "configs"
 DATA_DIR = ROOT / "data"
+# The segmentation model every tool runs unless told otherwise. seg_grey_v2_ft_20261123 (seg_grey_v2 fine-tuned
+# on real rig frames, 2026-11-23: models/seg_grey_v2_ft_20261123/README.md); models/seg_grey_v2 to switch back.
+SEG_WEIGHTS = ROOT / "models" / "seg_grey_v2_ft_20261123" / "best.pt"
 
 
 class ConfigError(Exception):

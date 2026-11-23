@@ -1,0 +1,13 @@
+# The ohmmeter's station: where the arm puts a held resistor's leads on the meter's two pads.
+# Taught 2026-11-23 12:59 by scripts/teach_ohmmeter.py (session logs/ohmmeter_teach_session.json).
+# centre_mm: the wrist's axis over the pads, scene mm, taught by hand as the bins are (servo supply off,
+# the pots read: base -7.73, elbow 72.56) and turned into scene mm by the CAD rig, as
+# resistor_nav.to_station turns it back (nudged since, if a nudge was made).
+# lead_axis_deg: the held resistor's long axis, scene deg from +x toward +y, set with the arm powered.
+# contact_slide: the slide where the meter first read steadily, probing down a degree at a time.
+# measure_slide: where the run measures: pressed on a little further.
+
+centre_mm = [-73.69, -166.39]
+lead_axis_deg = 89.2
+contact_slide = 67.0
+measure_slide = 68.5

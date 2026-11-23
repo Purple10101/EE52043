@@ -16,8 +16,11 @@ Writing a label to logs/tips/save.txt saves the next raw frame and the fit, as s
 
 Start with the arm off the plate and press l once the fit looks right, so the arm can't disturb it.
 
+The first frame once the plate is fitted is kept as the empty-plate reference, so start with the arm parked: the
+gripper is then found as what changed from it, whatever the light (vision/jaws.py). b takes it again.
+
 Keys:  q / Esc  quit      l  lock the fit, or refit      z  whole camera frame or zoomed on the plate
-       s  save the raw frame and the calibration to logs/tips
+       s  save the raw frame and the calibration to logs/tips      b  take the reference again (arm parked)
 """
 
 import argparse
@@ -94,6 +97,7 @@ def main():
     cv2.moveWindow(WINDOW, 40, 40)      # else it can open off the screen
     jaws = configured_finder() == "jaws"     # gripper v5: the jaw line is reported too, for keeping it face-on
     zoom, shown, snapped, told = True, None, 0.0, 0.0
+    reference = None            # the plate with the arm parked: taken from the first fitted frame, b again
     asked = SAVE.stat().st_mtime if SAVE.exists() else 0.0
     while True:
         ok, frame = cap.read()
@@ -107,11 +111,14 @@ def main():
             fitter.locked = True
 
         marked, line = frame, "looking for the plate..."
+        if cal is not None and reference is None:
+            reference = frame.copy()
+            print("Reference taken: the plate as it is now (the arm must be parked). b takes it again.", flush=True)
         if cal is not None:
             try:
                 extra = ""
                 if jaws:
-                    found = find_jaws(frame, cal, near, args.height)
+                    found = find_jaws(frame, cal, near, args.height, reference=reference)
                     tip = found.tip_mm
                     extra = (f", jaw {found.jaw_deg:.2f} deg, corners {found.spacing_mm:.2f} mm apart, "
                              f"centre ({found.centre_mm[0]:.2f}, {found.centre_mm[1]:.2f}) mm")
@@ -134,7 +141,7 @@ def main():
         left = camera_view(marked, cal, zoom)
         right = rectified_view(marked, cal, True) if cal is not None else np.zeros_like(left[:, :left.shape[0]])
         lines = [line] + status_lines(fitter)[:1] + [fitter.control.status()]
-        label(left, lines + ["q quit  l lock  z zoom  s save"])
+        label(left, lines + ["q quit  l lock  z zoom  s save  b reference"])
         view = np.hstack([left, right])
         shown = show(view, shown, WINDOW)
         if args.snapshot and time.time() - snapped > SNAPSHOT_S:
@@ -148,6 +155,9 @@ def main():
             fitter.locked = not fitter.locked
         elif key == ord("z"):
             zoom = not zoom
+        elif key == ord("b") and cal is not None:
+            reference = frame.copy()
+            print("Reference taken again.", flush=True)
         label_asked = None
         if SAVE.exists() and SAVE.stat().st_mtime != asked:
             asked = SAVE.stat().st_mtime

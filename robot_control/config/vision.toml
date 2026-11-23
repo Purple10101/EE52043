@@ -1,7 +1,9 @@
 # The overhead camera's detector. Camera settings, plate model, work area and tiles come from the
 # robot_offline package's configs/ (robot_offline/configs/), so training and the robot match.
 
-weights = "models/seg_grey_v2/best.pt"   # relative paths are from the repo root
+# seg_grey_v2 fine-tuned on real rig frames (2026-11-23): 238/3/3 found/false/missed on the 241 labelled test
+# bodies against seg_grey_v2's 231/1/10 (models/seg_grey_v2_ft_20261123/README.md). Back: models/seg_grey_v2/best.pt
+weights = "models/seg_grey_v2_ft_20261123/best.pt"   # relative paths are from the repo root
 conf = 0.5                # below about 0.3 the plate's rim shows up as false bodies
 
 # The band reader's value is trusted at this confidence or more; under it the part is to be measured. The

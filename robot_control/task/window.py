@@ -5,14 +5,16 @@
     | the arm: when it was started           |  A1  1k5    3 in |
     | the plate: what the last look found    |  ...  B4 empty   |
     +----------------------------------------+------------------+
-    |  the plate from above at the last look |  WHERE THE BINS  |
-    |  each resistor outlined and labelled   |  ARE: the rig    |
+    |  the plate LIVE, from above            |  WHERE THE BINS  |
+    |  the last look's resistors outlined    |  ARE: the rig    |
     |                                        |  from above      |
     +----------------------------------------+------------------+
     |  CALIBRATE ARM  |  CHECK AIM  |  LOOK  |  START  |  STOP   |
     +-----------------------------------------------------------+
 
-Outlines: green the next pick, orange picked later, grey left on the plate. A tray with an orange
+The plate is live (given live, e.g. Eyes.live): the camera's own picture until the plate has been fitted,
+then the newest frame rectified, top-down, with the last look's outlines over it. Outlines: green the next
+pick, orange picked later, grey left on the plate. A tray with an orange
 border is the one the arm is taking a resistor to. On the map the arm moves as the real one does
 (hardware.ArmMonitor), redrawn every time the window is.
 
@@ -23,6 +25,7 @@ button or key pressed. So the window stays alive while the arm moves.
 
 import textwrap
 import threading
+import time
 
 import cv2
 import numpy as np
@@ -38,13 +41,16 @@ BUTTON_H = 80
 BUTTONS = ["CALIBRATE ARM", "CHECK AIM", "LOOK", "START", "STOP"]
 NEXT, WILL_PICK, STAYS = (0, 230, 0), (0, 160, 255), (150, 150, 150)     # BGR
 FONT = cv2.FONT_HERSHEY_SIMPLEX
+LIVE_FPS = 5.0                  # live plate redraws a second, at most
 
 
 class RunWindow:
-    def __init__(self, title=TITLE, rig_map=None, monitor=None, buttons=BUTTONS):
+    def __init__(self, title=TITLE, rig_map=None, monitor=None, buttons=BUTTONS, live=None):
         """rig_map: task.RigMap, drawn under the tray list to show where each bin is; None for no map.
         monitor: hardware.ArmMonitor, to draw the arm on the map as it moves; None to leave it out.
-        buttons: the button bar's names, left to right."""
+        buttons: the button bar's names, left to right. live: a function giving (the newest camera frame or
+        None, the plate's fit or None), from any thread (Eyes.live), to show the plate live; None to show
+        each look's still picture instead."""
         self.title = title
         self.buttons = list(buttons)
         self.rig_map = rig_map
@@ -52,6 +58,8 @@ class RunWindow:
         self._lock = threading.Lock()
         self._plate = None              # the last look, drawn, PLATE_PX square
         self._plate_lines = []          # what the last look found
+        self._look = None               # (PlateView, plan, "HH:MM:SS") of the last look, drawn over the live plate
+        self._live_image = None         # the live plate, drawn, PLATE_PX square
         self._trays, self._target = [], None
         self._status, self._arm_line, self._aim_line = "", "", ""
         self._click = None
@@ -59,6 +67,9 @@ class RunWindow:
         cv2.moveWindow(title, 40, 20)   # else it can open off the screen
         cv2.setMouseCallback(title, self._on_mouse)
         self._size = None
+        self._live, self._stopping = live, threading.Event()
+        if live is not None:
+            threading.Thread(target=self._live_loop, name="live plate", daemon=True).start()
 
     # Called by the run, from any thread.
 
@@ -67,6 +78,7 @@ class RunWindow:
         image = draw_plate(view, plan)
         with self._lock:
             self._plate, self._plate_lines = image, list(lines)
+            self._look = (view, plan, time.strftime("%H:%M:%S"))
         return image
 
     def show_trays(self, trays, target=None):
@@ -111,6 +123,7 @@ class RunWindow:
         return name if name in enabled else None
 
     def close(self):
+        self._stopping.set()
         try:
             cv2.destroyWindow(self.title)
         except cv2.error:           # already gone: closed with its own X button
@@ -119,6 +132,27 @@ class RunWindow:
     def _on_mouse(self, event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
             self._click = (x, y)
+
+    def _live_loop(self):
+        """The live plate, redrawn LIVE_FPS times a second in its own thread until the window closes."""
+        while not self._stopping.is_set():
+            started = time.monotonic()
+            try:
+                frame, cal = self._live()
+                with self._lock:
+                    look = self._look
+                marks, note = None, "LIVE"
+                if look is not None and cal is not None:
+                    view, plan, when = look
+                    marks, note = (lambda rect: mark_look(rect, view, plan)), f"LIVE   outlines: the look at {when}"
+                image = live_plate(frame, cal, marks, note)
+            except Exception as why:            # a bad frame mustn't end the view
+                image = None
+                print(f"live plate: {type(why).__name__}: {why}", flush=True)
+            if image is not None:
+                with self._lock:
+                    self._live_image = image
+            self._stopping.wait(max(0.0, 1.0 / LIVE_FPS - (time.monotonic() - started)))
 
     def _compose(self, enabled):
         width = PLATE_PX + TRAY_W
@@ -129,7 +163,8 @@ class RunWindow:
             cv2.putText(status, fit(text, STATUS_CHARS), (12, 28 + 26 * i), FONT, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
         for i, text in enumerate(rest):
             cv2.putText(status, fit(text, STATUS_CHARS + 8), (12, 108 + 24 * i), FONT, 0.6, (200, 200, 200), 1, cv2.LINE_AA)
-        plate = self._plate if self._plate is not None else empty_plate()
+        plate = (self._live_image if self._live_image is not None else self._plate if self._plate is not None
+                 else empty_plate())
         left = np.vstack([status, plate])
         height = STATUS_H + PLATE_PX
         if self.rig_map is not None:
@@ -142,10 +177,17 @@ class RunWindow:
 
 
 def draw_plate(view, plan):
-    """The plate from above, white-balanced, every resistor outlined and labelled with its fate. Detections
-    too faint to be a new body get a thin grey outline and "?"; a body seen before but missing from this
-    look gets a dashed orange ring, "missed?" (the run looks again before it ends)."""
+    """The plate from above at a look, white-balanced, PLATE_PX square, with the look marked (mark_look)."""
     rect, _ = rectify.white_balance(rectify.rectify(view.frame, view.cal), view.cal.settings)
+    mark_look(rect, view, plan)
+    return cv2.resize(rect, (PLATE_PX, PLATE_PX), interpolation=cv2.INTER_AREA)
+
+
+def mark_look(rect, view, plan):
+    """A look drawn on a rectified plate image (rect, drawn on in place): every resistor outlined and
+    labelled with its fate. Detections too faint to be a new body get a thin grey outline and "?"; a body
+    seen before but missing from this look gets a dashed orange ring, "missed?" (the run looks again before
+    it ends)."""
     for poly, score, _ in getattr(view, "faint", []):
         outline = np.round(poly).astype(np.int32)
         cv2.polylines(rect, [outline], True, STAYS, 1, cv2.LINE_AA)
@@ -163,7 +205,34 @@ def draw_plate(view, plan):
         cv2.polylines(rect, [outline], True, colour, 6 if colour is NEXT else 3, cv2.LINE_AA)
         x, y = int(outline[:, 0].max()) + 8, int(outline[:, 1].mean())
         cv2.putText(rect, f"#{r.number} {fate}", (x, y), FONT, 0.9, colour, 2, cv2.LINE_AA)
-    return cv2.resize(rect, (PLATE_PX, PLATE_PX), interpolation=cv2.INTER_AREA)
+
+
+def live_plate(frame, cal, marks=None, note="LIVE", size=PLATE_PX):
+    """The plate pane from a live frame, size square: the camera's own picture while the plate isn't fitted
+    (cal None), else the frame rectified and white-balanced, top-down, with marks(rect) drawn on it first
+    (rect in rectified px). note: a caption in its top left corner. None if there is no frame yet."""
+    if frame is None:
+        return None
+    if cal is None:
+        image = np.full((size, size, 3), 20, np.uint8)
+        h = frame.shape[0] * size // frame.shape[1]
+        top = (size - h) // 2
+        image[top:top + h] = cv2.resize(frame, (size, h), interpolation=cv2.INTER_AREA)
+        note = f"{note}: the camera, plate not fitted yet"
+    else:
+        rect, _ = rectify.white_balance(rectify.rectify(frame, cal), cal.settings)
+        if marks is not None:
+            marks(rect)
+        image = cv2.resize(rect, (size, size), interpolation=cv2.INTER_AREA)
+    caption(image, note, (0, 0, 255) if cal is None else (255, 255, 255))
+    return image
+
+
+def caption(image, text, colour=(255, 255, 255)):
+    """text in the top left corner of image, on a dark strip."""
+    (w, h), _ = cv2.getTextSize(text, FONT, 0.55, 1)
+    cv2.rectangle(image, (0, 0), (w + 16, h + 14), (25, 25, 25), -1)
+    cv2.putText(image, text, (8, h + 7), FONT, 0.55, colour, 1, cv2.LINE_AA)
 
 
 def empty_plate():

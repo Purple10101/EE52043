@@ -15,6 +15,9 @@ from straight above and nudge them until the body sits in the middle of the jaws
     n                          skip this one
     q / Esc                    done: park, fit and save
 
+Beside the keys, the plate live from the camera, top-down: the resistor being taught outlined in green (the
+others grey) and a cross where the nudges have put the aim. It stands still while the arm moves.
+
 Each nudge lifts the jaws to the approach height, moves, and comes down again, so nothing on the plate is touched.
 Every pair (the camera's centre of the resistor against the potentiometers and wrist where the jaws were centred)
 goes to logs/pick_teach_<time>.csv as it's recorded. At the end vision/pick_fit.py fits the correction on top of
@@ -49,11 +52,14 @@ from robot_control.kinematics.arm import Kinematics  # noqa: E402
 from robot_control.vision import pick_fit  # noqa: E402
 from robot_control.vision.eyes import Eyes  # noqa: E402
 from robot_control.vision.guide import plan_jaws  # noqa: E402
+from robot_control.task.window import live_plate  # noqa: E402
+from robot_offline.pre import rectify  # noqa: E402
 
 FIELDS = ["centre_x", "centre_y", "body_deg", "aim_x", "aim_y", "along_mm", "across_mm", "base", "elbow", "wrist"]
 STEPS_MM = [0.25, 0.5, 1.0, 2.0]
 NUDGE_S = 1.0
 WINDOW = "teach picks"
+PLATE_PX = 600              # the live plate's height and width in the window
 KEYS = {ord("w"): (1, 0), 2490368: (1, 0), ord("s"): (-1, 0), 2621440: (-1, 0),
         ord("d"): (0, 1), 2555904: (0, 1), ord("a"): (0, -1), 2424832: (0, -1)}
 
@@ -65,8 +71,10 @@ def say(text):
 class Teacher:
     """Puts the open jaws over one resistor after another, moves them by the user's nudges, records the pairs."""
 
-    def __init__(self, arm, resistors, writer, out):
+    def __init__(self, arm, resistors, writer, out, live=None):
+        """live: Eyes.live, for the live plate beside the keys; None for the keys alone."""
         self.arm, self.nav = arm, arm.navigator
+        self.live = live
         self.resistors = resistors
         self.writer, self.out = writer, out
         self.i = 0
@@ -145,8 +153,21 @@ class Teacher:
         if self.resistor is not None:
             self.arrive()
 
+    def mark(self, rect, settings):
+        """The resistors on a rectified plate image: the one being taught green, the others grey, and a cross at
+        the aim."""
+        for k, other in enumerate(self.resistors):
+            colour, width = ((0, 230, 0), 5) if k == self.i else ((150, 150, 150), 2)
+            cv2.polylines(rect, [np.round(other.outline_px).astype(np.int32)], True, colour, width, cv2.LINE_AA)
+        if self.resistor is not None:
+            (u, v), = rectify.mm_to_rect(np.asarray([self.aim()], float), settings)
+            arm = int(round(3.0 * settings.px_per_mm))
+            u, v = int(round(u)), int(round(v))
+            cv2.line(rect, (u - arm, v), (u + arm, v), (255, 0, 255), 2, cv2.LINE_AA)
+            cv2.line(rect, (u, v - arm), (u, v + arm), (255, 0, 255), 2, cv2.LINE_AA)
+
     def draw(self):
-        image = np.zeros((300, 900, 3), np.uint8)
+        image = np.zeros((PLATE_PX if self.live else 300, 900, 3), np.uint8)
         r = self.resistor
         lines = [f"{len(self.pairs)} recorded" + (f", resistor {self.i + 1} of {len(self.resistors)}: "
                                                     f"({r.centre_mm[0]:.1f}, {r.centre_mm[1]:.1f}) mm" if r else ": all done, q"),
@@ -156,6 +177,11 @@ class Teacher:
                  "ENTER: centred, record     n: skip     q / Esc: done, fit and save"]
         for k, line in enumerate(lines):
             cv2.putText(image, line, (14, 34 + 42 * k), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
+        if self.live is not None:
+            frame, cal = self.live()
+            plate = live_plate(frame, cal, (lambda rect: self.mark(rect, cal.settings)) if cal is not None else None,
+                               size=PLATE_PX)
+            image = np.hstack([plate if plate is not None else np.zeros((PLATE_PX, PLATE_PX, 3), np.uint8), image])
         cv2.imshow(WINDOW, image)
 
     def run(self):
@@ -223,8 +249,7 @@ def main():
     path = ROOT / "logs" / f"pick_teach_{time.strftime('%Y%m%d_%H%M%S')}.csv"
     try:
         arm.park()
-        view = eyes.look(sharp=True)
-        eyes.close()
+        view = eyes.look(sharp=True)        # the camera stays open after: the window shows the plate live
         if not view.resistors:
             say("no resistors found on the plate")
             return
@@ -232,7 +257,7 @@ def main():
         with path.open("w", newline="") as out:
             writer = csv.writer(out)
             writer.writerow(FIELDS)
-            teacher = Teacher(arm, view.resistors, writer, out)
+            teacher = Teacher(arm, view.resistors, writer, out, live=eyes.live)
             try:
                 teacher.run()
             finally:

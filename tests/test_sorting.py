@@ -1,5 +1,7 @@
 """The sorting run's logic, with the camera and the arm faked: BinPlan, PickMemory, Planner, Supervisor."""
 
+import math
+
 import numpy as np
 import pytest
 
@@ -596,3 +598,144 @@ def test_with_an_unclassified_bin_values_outside_the_range_go_there_too():
     plan = Planner(bins, PickMemory()).plan(view(resistor(1, 0, -130, ohms=100_000)))
     assert plan.next.bin_id == "B4"
     assert plan.fates[1] == "NEXT unclassified (100k, outside the range) -> B4"
+
+
+# The ohmmeter backup (config/ohmmeter.toml; robot_control/hardware/ohmmeter.py)
+
+def measuring(eyes, readings, measure="unsure", ids=("A1", "A2", "A3", "B4")):
+    """A Supervisor whose planner measures, with a FakeOhmmeter giving readings in turn; B4 the reject bin."""
+    from robot_control.hardware.ohmmeter import FakeOhmmeter
+    bins = BinPlan(list(ids), SORTER, unclassified="B4")
+    meter = FakeOhmmeter(readings)
+    return Supervisor(eyes, FakeArm(eyes), Planner(bins, PickMemory(), measure), FakeLog(), ohmmeter=meter), meter
+
+
+def drops(boss):
+    return sorted(d for d in boss.arm.done if isinstance(d, str) and d.startswith("drop"))
+
+
+def test_measuring_needs_a_reject_bin_and_a_meter():
+    with pytest.raises(ValueError, match="reject bin"):
+        Planner(bin_plan(), PickMemory(), "unsure")
+    planner = Planner(BinPlan(["A1", "B4"], SORTER, unclassified="B4"), PickMemory(), "unsure")
+    eyes = FakeEyes()
+    with pytest.raises(ValueError, match="no ohmmeter"):
+        Supervisor(eyes, FakeArm(eyes), planner, FakeLog())
+    Supervisor(eyes, None, planner, FakeLog())          # looking only: nothing is measured
+
+
+def test_with_the_meter_unsure_resistors_are_picked_to_be_measured():
+    planner = Planner(BinPlan(["A1", "B4"], SORTER, unclassified="B4"), PickMemory(), "unsure")
+    plan = planner.plan(view(resistor(1, 0, -130, ohms=None, confidence=0.4), resistor(2, 40, -100, ohms=1500)))
+    picks = {p: f for p, f in plan.fates.items()}
+    assert "measure: unsure (best 1k at 40%) -> ohmmeter" in picks[1]
+    assert picks[2].endswith("1k5 -> A1")
+    assert plan.waiting == 2
+
+
+def test_with_the_meter_a_value_read_outside_the_range_is_measured_too():
+    planner = Planner(BinPlan(["A1", "B4"], SORTER, unclassified="B4"), PickMemory(), "unsure")
+    plan = planner.plan(view(resistor(1, 0, -130, ohms=100_000)))
+    assert plan.next.measure and plan.next.bin_id is None       # to the meter, not straight into B4
+    assert plan.fates[1] == "NEXT measure: 100k, outside the range -> ohmmeter"
+
+
+def test_an_out_of_range_misread_goes_where_the_meter_says():
+    eyes = FakeEyes(resistor(1, 0, -130, ohms=22_000))          # bands said 22k: really a 2k2
+    boss, meter = measuring(eyes, [2203.0])
+    assert boss.run().startswith("done")
+    assert meter.measured == 1
+    assert boss.bins.assigned == {2200: "A1"} and drops(boss) == ["drop A1"]
+
+
+def test_one_really_out_of_range_is_measured_then_rejected():
+    eyes = FakeEyes(resistor(1, 0, -130, ohms=100_000))
+    boss, meter = measuring(eyes, [100_400.0])
+    assert boss.run().startswith("done")
+    assert meter.measured == 1 and drops(boss) == ["drop B4"] and boss.bins.assigned == {}
+
+
+def test_a_measured_resistor_goes_in_the_bin_for_its_measured_value():
+    eyes = FakeEyes(resistor(1, 0, -130, ohms=None, confidence=0.4), resistor(2, 40, -100, ohms=1500))
+    boss, meter = measuring(eyes, [1490.0])
+    assert boss.run().startswith("done")
+    assert meter.measured == 1                          # only the unsure one
+    assert drops(boss) == ["drop A1", "drop A1"]        # measured as 1k5: with the other 1k5
+    assert "measured" in boss.log.events and eyes.plate == []
+
+
+def test_one_the_meter_cant_place_goes_in_the_reject_bin():
+    eyes = FakeEyes(resistor(1, 0, -130, ohms=None), resistor(2, 40, -100, ohms=None), resistor(3, -40, -160, ohms=None))
+    boss, _ = measuring(eyes, [math.inf, 1400.0, 1e6])  # open, off E24, outside the range
+    assert boss.run().startswith("done")
+    assert drops(boss) == ["drop B4"] * 3
+    assert boss.bins.assigned == {}
+
+
+def test_once_the_bins_are_full_a_new_measured_value_is_rejected():
+    eyes = FakeEyes(resistor(1, 0, -130, ohms=1500), resistor(2, 40, -100, ohms=None))
+    boss, _ = measuring(eyes, [2200.0], ids=("A1", "B4"))
+    assert boss.run().startswith("done")
+    assert drops(boss) == ["drop A1", "drop B4"]
+    assert boss.bins.assigned == {1500: "A1"}
+
+
+def test_measuring_all_catches_a_confident_misread():
+    eyes = FakeEyes(resistor(1, 0, -130, ohms=470, confidence=0.82))     # really a 4k7 (2026-11-11)
+    boss, meter = measuring(eyes, [4702.0], measure="all")
+    assert boss.run().startswith("done")
+    assert boss.bins.assigned == {4700: "A1"}
+    assert meter.measured == 1
+
+
+def test_a_meter_that_stops_answering_drops_what_it_holds_then_stops_the_run():
+    from robot_control.hardware.ohmmeter import OhmmeterError
+    eyes = FakeEyes(resistor(1, 0, -130, ohms=None), resistor(2, 40, -100, ohms=None))
+    boss, _ = measuring(eyes, [OhmmeterError("no reply")])
+    ended = boss.run()
+    assert ended.startswith("STOPPED") and "ohmmeter" in ended
+    assert drops(boss) == ["drop B4"] and not boss.arm.holding
+
+
+class StationArm(FakeArm):
+    """A FakeArm that also goes to the ohmmeter's station (or can't: unreachable)."""
+
+    def __init__(self, eyes, unreachable=False):
+        super().__init__(eyes)
+        self.unreachable = unreachable
+
+    def press_on_meter(self, station):
+        self.done.append("press")
+        if self.unreachable:
+            self.message = "CAN'T REACH THE OHMMETER"
+        return not self.unreachable
+
+    def lift(self):
+        self.done.append("lift")
+
+
+def at_station(eyes, readings, unreachable=False):
+    import dataclasses
+    from robot_control.config import OhmmeterStation
+    from robot_control.hardware.ohmmeter import FakeOhmmeter
+    meter = FakeOhmmeter(readings)
+    meter.settings = dataclasses.replace(meter.settings, station=OhmmeterStation((80.0, -40.0), 10.0, 44.0, 45.5))
+    bins = BinPlan(["A1", "A2", "B4"], SORTER, unclassified="B4")
+    arm = StationArm(eyes, unreachable)
+    return Supervisor(eyes, arm, Planner(bins, PickMemory(), "unsure"), FakeLog(), ohmmeter=meter), meter
+
+
+def test_with_a_station_the_resistor_is_pressed_on_the_pads_measured_lifted_then_dropped():
+    eyes = FakeEyes(resistor(1, 0, -130, ohms=None, confidence=0.4))
+    boss, meter = at_station(eyes, [1490.0])
+    assert boss.run().startswith("done")
+    moves = [d for d in boss.arm.done if isinstance(d, str)]
+    assert moves[moves.index("pick #1"):moves.index("drop A1") + 1] == ["pick #1", "press", "lift", "drop A1"]
+    assert meter.measured == 1
+
+
+def test_a_station_it_cant_reach_sends_the_resistor_to_the_reject_bin_unmeasured():
+    eyes = FakeEyes(resistor(1, 0, -130, ohms=None, confidence=0.4))
+    boss, meter = at_station(eyes, [1490.0], unreachable=True)
+    assert boss.run().startswith("done")
+    assert drops(boss) == ["drop B4"] and meter.measured == 0

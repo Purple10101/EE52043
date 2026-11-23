@@ -1,0 +1,44 @@
+# The ohmmeter backup: resistors the band reader isn't sure of are measured electrically instead of being
+# left on the plate (robot_control/hardware/ohmmeter.py). ON since 2026-11-23: the station taught and a 1k
+# measured on it twice (992 ohm), experiments/2026-11-23_ohmmeter_station. --no-ohmmeter turns it off for a run.
+#
+# The meter (2026-11-23): an Arduino Uno running the team's ohm-meter_serial_en sketch (AB3849/Applied-Robotics,
+# private). The unknown resistor goes between 5 V and A0; one of five references (200R, 560R, 1k5, 3k9, 10k on
+# D2-D6) pulls A0 down at a time, and the one nearest mid-scale is used. Its two contacts are pads on a station
+# off the plate: the arm carries the resistor there in the jaws, presses its leads onto the pads without
+# letting go, measures, lifts, and carries it on to its bin. Where the station is: ohmmeter_station.toml,
+# written by scripts/teach_ohmmeter.py.
+
+enabled = true
+
+# Which resistors are measured. "unsure": those with no trusted band value (under min_confidence in
+# vision.toml, moved since the read, or not there at the read), and those whose band value is outside the
+# sorter's range: unclassified and out-of-range resistors always go to the meter (the user's rule,
+# 2026-11-23), never straight into reject_bin. "all": every picked resistor, so the meter also catches
+# confident misreads (the factor-of-ten ones). Either way the meter's value decides the bin.
+measure = "unsure"
+
+# Where a measured resistor goes when the meter can't place it: no reading, an open circuit (the leads off
+# the pads), a short, off the E24 series, outside 10 ohm to 10 kohm, or no bin left for its value.
+# Used as the run's unclassified bin when none is given on the command line.
+reject_bin = "B4"
+
+# The serial link. port "" finds the meter by its USB ids (the Uno's: Arduino 2341:0043; COM12 on 2026-11-23).
+# Opening the port resets the Uno: it prints "<Ready!>" about 1.7 s later, waited for up to ready_s.
+port = ""
+usb_vid = 0x2341
+usb_pid = 0x0043
+baud = 9600
+timeout_s = 2.0               # a reply takes longer than this (it takes 40 ms): the meter is counted as gone
+ready_s = 3.0
+
+# The protocol (fixed by the sketch, so not settings): "debug on" once after opening, so each "measure" is
+# answered "Raw: 4701.23 Ohms -> ..." (the unrounded value; without debug it prints E12-snapped, 2 s.f.),
+# or "Open circuit" / "Short circuit".
+
+# Taking a reading.
+settle_s = 0.3                # after the leads are pressed on the pads, before the first sample
+samples = 3                   # readings taken, the median used
+agree_pct = 2.0               # the samples must lie within this of their median, else the reading is unsteady
+open_ohm = 1.0e7              # at or above this, nothing is between the contacts
+e24_tolerance_pct = 6.0       # a reading this close to an E24 value is that value (5% parts + contact resistance)

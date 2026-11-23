@@ -84,11 +84,24 @@ full search (about 16 s on the rig), each later one about 3.5 s. If the cross is
 stands in. Close-ups use the check's offset, so START needs no focus sweep of its own. With the check, segmentation
 found 8 of 8 kit parts against 5 of 8 at the old fixed focus. Each look's focus state is in the run's `events.csv`.
 
-**"Measure"** marks a resistor with no trusted value, for the ohmmeter once there is one (until then it stays on
-the plate). That covers three cases:
+**"Measure"** marks a resistor with no trusted value, for the ohmmeter. That covers three cases:
 - unsure at the read (under 0.7);
 - knocked since the read;
 - not there at the read: missed by segmentation, or uncovered later.
+
+**The ohmmeter backup** (`robot_control/config/ohmmeter.toml`, **off** until the meter arrives). With it on, a
+"measure" resistor is picked and measured in the jaws, and its reading decides the bin. The reading is the
+median of a few samples, rounded to the nearest E24 value. If the meter can't place a resistor, it goes in the
+reject bin (`reject_bin`, B4, or `--unclassified-bin`). That covers an open circuit (nothing in the jaws), an
+unsteady reading, a value off E24 or outside 10 ohm to 10 kohm, and a value with no bin left. `measure = "all"`
+measures every pick, so the meter also catches confident misreads. If the meter stops answering, the run drops
+what it holds in the reject bin and stops. `--no-ohmmeter` ignores it. With it off, "measure" resistors stay on
+the plate (or go in `--unclassified-bin`).
+
+The driver is a stub (`robot_control/hardware/ohmmeter.py`): the query, baud and reply format are placeholders.
+To bring the meter up: `python scripts\ohmmeter_check.py --list` (its port), `--raw` (what it sends; fix
+`query` and `parse_reply` to match), then plain (readings of a known resistor). Then set `enabled = true`. Only
+measuring in the jaws is built; a fixed measuring station would need its own moves (`Supervisor.measure`).
 
 A resistor seen before but missing from a look gets a dashed "missed?" ring, and the run looks again rather than
 end. A pick the jaws missed is followed, and picked again.
@@ -493,9 +506,11 @@ jaws went.
 | `RunWindow` | `task/window.py` | The window: status, plate, trays and buttons. It only draws; the run tells it what to show |
 | `SortingApp` | `task/app.py` | The buttons, each running one job (calibrate, look, run) in the background so the window stays alive |
 | `RunLog` | `task/run_log.py` | `logs/sort_runs/<time>/`: events.csv and a picture per look |
+| `SerialOhmmeter` | `hardware/ohmmeter.py` | The ohmmeter backup (a stub until the meter arrives): `measure()` reads what is in the jaws, rounded to E24. `FakeOhmmeter` stands in for it in tests |
 
 **What stays on the plate:**
-- a resistor to be measured: unsure at the read (under 0.7), moved since, or not there at the read;
+- a resistor to be measured: unsure at the read (under 0.7), moved since, or not there at the read (unless the
+  ohmmeter is on: then it is measured);
 - one read outside 10 ohm to 10 kohm;
 - one the arm missed twice or couldn't reach;
 - one whose value has no bin left once all 8 are taken.

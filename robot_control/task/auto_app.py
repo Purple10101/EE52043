@@ -15,6 +15,12 @@ step is checked, and sorting can't begin until all of them have passed:
    found on a clear plate, never with a lead over its crosshair, and the aim check has nothing to hit.
 3. The aim checked (task.AimCheck): the tip down at 5 points, the steady shift taken out and saved.
    It passes if no more than LEFT_OK_MM is left; otherwise the full calibration is needed.
+4. With the ohmmeter on (config/ohmmeter.toml): it answers, and reads an open circuit with nothing on its pads.
+   Checked first, as it moves nothing: a meter that isn't up fails CALIBRATE before the arm sweeps.
+
+With the ohmmeter, START measures the resistors the band reader isn't sure of: each is picked, its leads
+pressed on the meter's pads still in the jaws (config/ohmmeter_station.toml), and binned by what the meter
+reads; one the meter can't place goes in the reject bin.
 
 Then START reads every resistor's value once (a focus sweep, then a close-up of each: vision.Eyes.read_values)
 and sorts until nothing is left that it can sort (task.Supervisor). Pressing START again carries
@@ -25,6 +31,7 @@ on with the same bins, as in the manual window; CALIBRATE again is needed only i
 import time
 from dataclasses import dataclass, field
 
+from robot_control.hardware.ohmmeter import OhmmeterError
 from robot_control.task import aim_check
 from robot_control.task.aim_check import AimCheck, camera_aimed, describe_for
 from robot_control.task.app import SortingApp
@@ -33,6 +40,10 @@ BUTTONS = ["CALIBRATE", "START", "STOP"]
 BEFORE_CALIBRATE = ("Plate EMPTY. After a power-on: servo supply OFF, by hand slide fully up, elbow folded 100+ deg, "
                     "gripper turned from the tower; supply ON. Then press CALIBRATE.")
 AFTER_CALIBRATE = "Calibrated. Lay the resistors out on the plate, keeping the crosshair clear, and press START."
+SKIPPED_CALIBRATE = ("Calibration skipped: the arm must already be started since the Nucleo's last power-on, and "
+                     "the rig not moved since the aim was checked. Lay the resistors out, keeping the crosshair "
+                     "clear, and press START (or CALIBRATE on an empty plate first).")
+SKIPPED = object()          # AutoSortingApp.calibration when run with skip_calibration: START offered without one
 
 
 class CalibrationFailed(Exception):
@@ -55,18 +66,29 @@ class CalibrationResult:
 
 
 class StandardCalibration:
-    """The fixed calibration: arm, plate, aim, each checked before the next."""
+    """The fixed calibration: the meter (if any), arm, plate, aim, each checked before the next."""
 
-    def __init__(self, arm, eyes, log, say=print, check_aim=True):
-        """check_aim: the third step, for an arm aiming by the camera calibration. Without it (the CAD geometry)
-        there are two."""
+    def __init__(self, arm, eyes, log, say=print, check_aim=True, meter=None):
+        """check_aim: the aim step, for an arm aiming by the camera calibration. Without it (the CAD geometry)
+        there is one step fewer. meter: the ohmmeter (hardware.ohmmeter), or None when it is off."""
         self.arm, self.eyes, self.log, self.say = arm, eyes, log, say
-        self.aims = check_aim
-        self.of = 3 if check_aim else 2
+        self.aims, self.meter = check_aim, meter
+        self.step = 0
+
+    @property
+    def of(self):
+        return 2 + bool(self.aims) + (self.meter is not None)
+
+    def announce(self, text):
+        self.step += 1
+        self.say(f"{self.step}/{self.of} {text}")
 
     def run(self):
         """Every step in order. Returns a CalibrationResult; raises CalibrationFailed at the first that doesn't pass."""
+        self.step = 0
         steps = []
+        if self.meter is not None:
+            steps.append(self.check_meter())
         elbow = self.start_arm()
         steps.append(str(elbow))
         steps.append(self.check_plate_empty())
@@ -76,15 +98,28 @@ class StandardCalibration:
         self.log.event(0, "calibrated", steps=steps)
         return result
 
+    def check_meter(self):
+        self.announce("checking the ohmmeter: it must answer, and read open with nothing on its pads")
+        try:
+            m = self.meter.measure(settle=False)
+        except OhmmeterError as why:
+            raise CalibrationFailed(f"the ohmmeter isn't answering ({why}): check its USB cable, or run with "
+                                    "--no-ohmmeter") from None
+        if not m.is_open:
+            got = "a short" if m.ohms == 0 else "no reading" if m.ohms is None else f"{m.ohms:.0f} ohm"
+            raise CalibrationFailed(f"the ohmmeter reads {got} with nothing meant to be on its pads: clear them "
+                                    "(a resistor or lead left there?) and CALIBRATE again")
+        return "ohmmeter answering, pads clear"
+
     def start_arm(self):
-        self.say(f"1/{self.of} starting the arm: the base and elbow sweep end to end, then the elbow check")
+        self.announce("starting the arm: the base and elbow sweep end to end, then the elbow check")
         elbow = self.arm.start_up(say=self.say)
         if not elbow.ok:
             raise CalibrationFailed(f"{elbow}. Free the cables, set the arm by hand again and CALIBRATE again")
         return elbow
 
     def check_plate_empty(self):
-        self.say(f"2/{self.of} finding the plate and checking it is empty")
+        self.announce("finding the plate and checking it is empty")
         found = self.eyes.count_bodies()
         if found:
             raise CalibrationFailed(f"the plate isn't empty: {found} resistor{'s' * (found != 1)} seen. CALIBRATE needs an "
@@ -92,7 +127,7 @@ class StandardCalibration:
         return "plate found and empty"
 
     def check_aim(self):
-        self.say("3/3 checking the aim: the tip down at 5 points")
+        self.announce("checking the aim: the tip down at 5 points")
         report = AimCheck(self.eyes, self.arm).run(say=self.say)
         if report.found < aim_check.MIN_POINTS:
             raise CalibrationFailed(f"aim check: {report.verdict}")
@@ -104,10 +139,13 @@ class StandardCalibration:
 class AutoSortingApp(SortingApp):
     """SortingApp with the procedure fixed (see above): CALIBRATE, then START."""
 
-    def __init__(self, supervisor, window):
-        self.calibration = None             # the last CalibrationResult that passed, in this window
+    def __init__(self, supervisor, window, skip_calibration=False):
+        """skip_calibration: START offered straight away, taking the arm as already started (slide_wrist.py start
+        or an earlier CALIBRATE, since the Nucleo's last power-on) and the aim as it is in camera_calibration.json.
+        Nothing here can tell if the Nucleo has lost power since: then the arm lands well off."""
+        self.calibration = SKIPPED if skip_calibration else None    # the last CalibrationResult that passed here
         super().__init__(supervisor, window)
-        self.window.say(BEFORE_CALIBRATE)
+        self.window.say(SKIPPED_CALIBRATE if skip_calibration else BEFORE_CALIBRATE)
 
     def run(self):
         while True:
@@ -138,7 +176,7 @@ class AutoSortingApp(SortingApp):
         self.calibration = None
         try:
             result = StandardCalibration(self.arm, self.supervisor.eyes, self.supervisor.log, self.supervisor.say,
-                                         check_aim=camera_aimed(self.arm)).run()
+                                         check_aim=camera_aimed(self.arm), meter=self.supervisor.ohmmeter).run()
         except CalibrationFailed as why:
             self.supervisor.log.event(0, "calibration failed", why=str(why))
             self.window.show_arm(self.arm_line())

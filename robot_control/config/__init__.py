@@ -172,3 +172,70 @@ class VisionSettings:
         t = load("vision")
         limit = t.get("min_confidence")
         return cls(Path(t["weights"]), float(t["conf"]), None if limit is None else float(limit))
+
+
+@dataclass(frozen=True)
+class OhmmeterStation:
+    """ohmmeter_station.toml: where the arm puts a held resistor's leads on the ohmmeter's two pads, as
+    scripts/teach_ohmmeter.py taught it. centre_mm: the wrist's axis there, scene mm (taught by hand, as the
+    bins are). lead_axis_deg: the held resistor's long axis, scene deg from +x toward +y (taken across the
+    pads). contact_slide: the slide where the meter first read steadily; measure_slide: where it measures,
+    pressed on a little further."""
+    centre_mm: tuple
+    lead_axis_deg: float
+    contact_slide: float
+    measure_slide: float
+
+    @classmethod
+    def from_config(cls, config_dir=CONFIG_DIR):
+        """The taught station, or None if it hasn't been taught (no file)."""
+        if not (Path(config_dir) / "ohmmeter_station.toml").exists():
+            return None
+        t = load("ohmmeter_station", config_dir)
+        centre = tuple(float(v) for v in t["centre_mm"])
+        if len(centre) != 2:
+            raise ConfigError("ohmmeter_station.toml: centre_mm must be [x, y]")
+        s = cls(centre, float(t["lead_axis_deg"]), float(t["contact_slide"]), float(t["measure_slide"]))
+        if s.measure_slide < s.contact_slide:
+            raise ConfigError("ohmmeter_station.toml: measure_slide must be at or below (more than) contact_slide")
+        return s
+
+
+@dataclass(frozen=True)
+class OhmmeterSettings:
+    """ohmmeter.toml: the ohmmeter backup for resistors the band reader isn't sure of. The held resistor is
+    put on the meter's station (station: OhmmeterStation, None until taught), measured, and carried on."""
+    enabled: bool = False
+    measure: str = "unsure"         # "unsure": resistors with no trusted value; "all": every pick
+    reject_bin: str | None = None   # where one the meter can't place goes
+    port: str = ""                  # "" to find it by usb_vid and usb_pid
+    usb_vid: int = 0
+    usb_pid: int = 0
+    baud: int = 9600
+    timeout_s: float = 2.0
+    ready_s: float = 3.0
+    settle_s: float = 0.3
+    samples: int = 3
+    agree_pct: float = 2.0
+    open_ohm: float = 1.0e7
+    e24_tolerance_pct: float = 6.0
+    station: OhmmeterStation | None = None
+
+    MEASURE = ("unsure", "all")
+
+    @classmethod
+    def from_config(cls, config_dir=CONFIG_DIR):
+        t = load("ohmmeter", config_dir)
+        s = cls(bool(t["enabled"]), str(t["measure"]), str(t["reject_bin"]).upper() or None,
+                str(t["port"]), int(t["usb_vid"]), int(t["usb_pid"]), int(t["baud"]), float(t["timeout_s"]),
+                float(t["ready_s"]), float(t["settle_s"]), int(t["samples"]),
+                float(t["agree_pct"]), float(t["open_ohm"]), float(t["e24_tolerance_pct"]),
+                OhmmeterStation.from_config(config_dir))
+        if s.measure not in cls.MEASURE:
+            raise ConfigError(f"ohmmeter.toml: measure must be one of {', '.join(cls.MEASURE)}, not '{s.measure}'")
+        if s.samples < 1:
+            raise ConfigError("ohmmeter.toml: samples must be 1 or more")
+        if s.enabled and s.station is None:
+            raise ConfigError("ohmmeter.toml: enabled, but the station isn't taught yet "
+                              "(python scripts/teach_ohmmeter.py writes ohmmeter_station.toml)")
+        return s

@@ -132,9 +132,33 @@ def test_start_is_only_offered_once_a_calibration_has_passed():
     assert app.enabled() == {"CALIBRATE", "START"}
 
 
+def test_skipping_calibration_offers_start_straight_away():
+    app = AutoSortingApp(Supervisor(Arm(GOOD_ELBOW, [])), Window(), skip_calibration=True)
+    assert app.enabled() == {"CALIBRATE", "START"}
+    assert "Calibration skipped" in app.window.status
+
+
 def test_aiming_by_the_cad_geometry_calibrate_skips_the_aim_check(monkeypatch):
     calibration, done, _ = calibrate(monkeypatch)
-    calibration.aims, calibration.of = False, 2
+    calibration.aims = False
     result = calibration.run()
     assert done == ["start_up", "count_bodies"]
     assert result.aim is None and "CAD geometry" in result.summary()
+
+
+def test_with_the_ohmmeter_it_is_checked_first_and_must_read_open(monkeypatch):
+    import math
+    from robot_control.hardware.ohmmeter import FakeOhmmeter, OhmmeterError
+    calibration, done, _ = calibrate(monkeypatch)
+    calibration.meter = FakeOhmmeter([math.inf])
+    said = []
+    calibration.say = said.append
+    result = calibration.run()
+    assert result.steps[0] == "ohmmeter answering, pads clear" and done == ["start_up", "count_bodies", "aim"]
+    assert said[0].startswith("1/4 checking the ohmmeter")
+    for reading, why in ((1000.0, "reads 1000 ohm"), (OhmmeterError("no reply"), "isn't answering")):
+        calibration, done, _ = calibrate(monkeypatch)
+        calibration.meter = FakeOhmmeter([reading])
+        with pytest.raises(CalibrationFailed, match=why):
+            calibration.run()
+        assert done == []                       # nothing moved

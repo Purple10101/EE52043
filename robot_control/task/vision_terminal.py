@@ -27,7 +27,9 @@ CLASSIFY  the subject read as a sorting run reads it (Eyes.read_values, for one 
           and combined. That reading is CLASSIFIED and stays with the body while it stays where it was.
 PICK      the subject picked and dropped in one bin (--bin), then the arm parked. Needs the arm started.
 
-The live view pauses while CALIBRATE, SEGMENT, CLASSIFY or PICK's picture use the camera.
+The plate is always live: the camera's own picture until the plate is fitted, then top-down. While CALIBRATE,
+SEGMENT, CLASSIFY or PICK's picture use the camera, the live segmentation pauses but the plate keeps showing the
+frames the job reads (vision.SharedCamera).
 """
 
 import math
@@ -44,7 +46,8 @@ from robot_offline.pre import rectify
 
 from robot_control.task.aim_check import camera_aimed
 from robot_control.task.auto_app import CalibrationFailed, StandardCalibration
-from robot_control.task.window import FONT, PLATE_PX, STATUS_CHARS, STATUS_H, TRAY_W, RunWindow, draw_buttons, fit
+from robot_control.task.window import (FONT, LIVE_FPS, PLATE_PX, STATUS_CHARS, STATUS_H, TRAY_W, RunWindow,
+                                       draw_buttons, fit, live_plate)
 from robot_control.vision.eyes import combine
 from robot_control.world import Resistor
 
@@ -159,6 +162,11 @@ class TerminalWindow(RunWindow):
     def show_live(self, image, scale, lines):
         with self._lock:
             self._live, self._scale, self._seg_lines = image, scale, list(lines)
+
+    def show_live_image(self, image):
+        """A new live plate picture alone, the scale and lines kept (while a job has the camera)."""
+        with self._lock:
+            self._live = image
 
     def show_subject(self, lines, crop_images):
         with self._lock:
@@ -312,7 +320,14 @@ class VisionTerminal:
 
     def live_loop(self):
         while not self.quitting:
-            with self.camera:
+            if not self.camera.acquire(timeout=0.05):   # a job has the camera: show the frames it reads
+                try:
+                    self.live_while_busy()
+                except Exception as why:
+                    print(f"live view: {type(why).__name__}: {why}", flush=True)
+                time.sleep(1.0 / LIVE_FPS)
+                continue
+            try:
                 started = time.monotonic()
                 try:
                     self.live_frame()
@@ -320,7 +335,16 @@ class VisionTerminal:
                     self.window.say(f"live view: {type(why).__name__}: {why}")
                     time.sleep(0.5)
                 self.live_note = f"{1.0 / max(time.monotonic() - started, 1e-3):.1f} frames/s"
+            finally:
+                self.camera.release()
             time.sleep(0.005)                       # lets a waiting job take the camera
+
+    def live_while_busy(self):
+        """The plate while a job has the camera: its newest frame, top-down if the plate is fitted, unmarked."""
+        frame, cal = self.eyes.live()
+        image = live_plate(frame, cal, note=f"LIVE: {self.job_name or 'a job'} has the camera, segmentation paused")
+        if image is not None:
+            self.window.show_live_image(image)
 
     def live_frame(self):
         e = self.eyes
@@ -329,7 +353,8 @@ class VisionTerminal:
             raise RuntimeError("the camera returned no frame")
         cal = e.tracker.update(frame)
         if cal is None:
-            self.window.show_live(None, 1.0, [f"live: finding the plate ({e.tracker.status()})"])
+            self.bodies = []
+            self.window.show_live(live_plate(frame, None), 1.0, [f"live: finding the plate ({e.tracker.status()})"])
             return
         conf = e.detector.vision.conf
         found = e._segment(frame, cal)

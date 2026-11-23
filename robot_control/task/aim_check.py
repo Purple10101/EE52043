@@ -75,6 +75,12 @@ class AimCheck:
         from robot_control.vision.tip import TipNotFound
         nav = self.arm.navigator
         lens = self.eyes.lens_mm()
+        if hasattr(self.eyes, "take_tip_reference"):
+            # The plate with the arm away, for the tip finder to compare each reading with: it then finds the
+            # gripper as what changed, whatever the light (vision/jaws.py), and only falls back on its colour.
+            if not getattr(nav, "parked", False):
+                self.arm.park()
+            self.eyes.take_tip_reference()
         pairs_path = self.logs / f"aim_check_{time.strftime('%Y%m%d_%H%M%S')}.csv"
         tips, axes, joints = [], [], []
         with pairs_path.open("w", newline="") as f:
@@ -91,6 +97,7 @@ class AimCheck:
                     continue
                 finally:
                     self.arm.lift()
+                    self.keep_picture(pairs_path, i)
                 tips.append(tuple(float(v) for v in tip))
                 axes.append(axis_mm(tip, base, elbow, wrist) if measured is None else np.asarray(measured, float))
                 joints.append((base, elbow))
@@ -100,6 +107,19 @@ class AimCheck:
                 f.flush()
         self.arm.park()
         return self.judge(CHECK_POINTS, tips, np.array(axes), np.array(joints), nav, pairs_path, say)
+
+    def keep_picture(self, pairs_path, i):
+        """The picture the tip was looked for in, with its plate fit, beside the pairs: <pairs>_p<i>.png and
+        _rectify.json, so a point that wasn't found (or was misread) can be looked at afterwards."""
+        picture = getattr(self.eyes, "last_tip_picture", None)
+        if picture is None:
+            return
+        import cv2
+        frame, cal = picture
+        stem = pairs_path.with_name(f"{pairs_path.stem}_p{i}")
+        cv2.imwrite(str(stem.with_suffix(".png")), frame)
+        cal.save(str(stem) + "_rectify.json")
+        self.eyes.last_tip_picture = None
 
     def judge(self, points, tips, axes, joints, nav, pairs_path, say=print):
         """The verdict from the pairs; saves the shifted calibration and gives it to the navigator if it's worth it."""

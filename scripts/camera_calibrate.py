@@ -63,7 +63,9 @@ from robot_control.vision.guide import CALIBRATION_JAW_DEG, WRIST_SCALE, axis_mm
 from robot_control.vision.rig import correct_height  # noqa: E402
 
 # Scene mm: round the plate, kept to its white top and to where the elbow stays under bench.ELBOW_MAX.
-POINTS = [(-0.48, -130.37), (40.0, -130.0), (40.0, -170.0), (0.0, -170.0), (-40.0, -170.0), (-40.0, -130.0),
+# Kept to where the camera sees the closed jaws against the plate (jaws.py): at y -170 one corner is 16 mm
+# along y, past the plate's -180 edge, and at x 40 the bodies stand beyond the +x edge in the camera's view.
+POINTS = [(-0.48, -130.37), (35.0, -130.0), (35.0, -158.0), (0.0, -158.0), (-40.0, -158.0), (-40.0, -130.0),
           (-35.0, -112.0), (0.0, -114.0), (35.0, -112.0), (35.0, -100.0), (0.0, -102.0), (-35.0, -100.0)]
 CHECK_POINTS = [(20.0, -150.0), (-20.0, -150.0), (20.0, -122.0), (-20.0, -122.0), (0.0, -142.0)]
 PICK_SLIDE = bench.OVER_PLATE_SLIDE
