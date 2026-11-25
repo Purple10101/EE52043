@@ -122,7 +122,7 @@ def test_too_few_tips_give_no_verdict(tmp_path):
 # The arm's part: the tip down at a point, as camera_calibrate's check puts it
 
 class Bench:
-    SWING_S, OVER_PLATE_SLIDE = 3.0, 63.0
+    SWING_S, OVER_PLATE_SLIDE = 3.0, 59.0
 
     def __init__(self):
         self.done = []
@@ -137,7 +137,7 @@ class Bench:
         return -46.0, 110.5
 
     def load_state(self):
-        return {"wrist": 70.0, "slide": 63.0}
+        return {"wrist": 70.0, "slide": 59.0}
 
 
 class Jaws:
@@ -166,5 +166,43 @@ def test_touching_a_point_closes_the_jaws_comes_over_it_lowers_and_lands():
     nav = Navigator(bench.done)
     got = Arm(nav, {}, bench).touch((0.0, -130.0), (-145.0, -145.0, 183.0))
     assert [d if isinstance(d, str) else d[0] for d in bench.done] == ["close", "lift", "approach", "drive", "land"]
-    assert ("drive", "slide", 63.0) in bench.done and not nav.parked
+    assert ("drive", "slide", 59.0) in bench.done and not nav.parked
     assert got == (-46.0, 110.5, 70.0)
+
+
+# The run: the reference picture first, with the arm parked, then the touches
+
+def test_the_reference_is_taken_parked_before_the_first_touch(tmp_path):
+    from robot_control.vision.tip import TipNotFound
+    done = []
+
+    class RunNav(Nav):
+        parked = False
+
+    class Eyes:
+        def lens_mm(self):
+            return (-145.0, -145.0, 180.0)
+
+        def take_tip_reference(self):
+            done.append("reference")
+
+        def find_tip_and_axis(self, near_mm, height_mm=0.0):
+            done.append("find")
+            raise TipNotFound("none here")
+
+    class RunArm:
+        navigator, bench = RunNav(), Bench()
+
+        def park(self):
+            done.append("park")
+
+        def touch(self, point, lens):
+            done.append("touch")
+            return -46.0, 110.5, 0.0
+
+        def lift(self):
+            pass
+
+    report = AimCheck(Eyes(), RunArm(), path=tmp_path / "c.json", logs=tmp_path).run(say=lambda t: None)
+    assert done[:4] == ["park", "reference", "touch", "find"]
+    assert report.found == 0 and "no verdict" in report.verdict

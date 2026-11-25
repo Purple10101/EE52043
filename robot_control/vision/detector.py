@@ -14,6 +14,7 @@ from robot_offline import config as offline_config
 from robot_offline.inf import tiling
 from robot_offline.pre import plate_search, rectify
 
+from robot_control.vision.orientations import predict_two_ways
 from robot_control.vision.rig import correct_height, scene_to_robot
 from robot_control.world import Detection
 
@@ -58,8 +59,8 @@ class Detector:
     def detect(self, frame, cal, snapshot_id):
         """(Detections, rectified image) for frame; the image is white-balanced, for overlays."""
         image, balanced = rectify.model_input(frame, cal)
-        frame_tiles = tiling.tiles(self.work_area, cal.settings.size, self.tile_size, self.tile_overlap)
-        polygons, scores = tiling.predict_frame(self.model, image, frame_tiles, conf=self.vision.conf, grey=self.grey)
+        polygons, scores = predict_two_ways(self.model, image, self.work_area, self.tile_size, self.tile_overlap,
+                                            conf=self.vision.conf, grey=self.grey)
         return to_detections(polygons, scores, cal, self.rig, self.workspace, snapshot_id), balanced
 
 

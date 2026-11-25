@@ -67,7 +67,7 @@ def test_the_waiting_view_fits_a_wide_camera_frame_into_the_plate_view():
 sent = []
 
 
-def run_to_bin(monkeypatch, landed, slide=20.0):
+def run_to_bin(monkeypatch, landed, slide=resistor_nav.bench.HOVER_SLIDE):
     """to_bin with the arm faked, landing at landed (base, elbow): the moves it made, in order."""
     made = []
     sent.clear()
@@ -186,7 +186,7 @@ def holding_nav(monkeypatch, landed=(20.0, 100.0), path=((20.0, 100.0),)):
     monkeypatch.setattr(resistor_nav, "bin_path", lambda *a: None if path is None else list(path))
     monkeypatch.setattr(resistor_nav.time, "sleep", lambda s: None)
     monkeypatch.setattr(bench, "read_joints", lambda *a: landed)
-    monkeypatch.setattr(bench, "load_state", lambda: {"wrist": 50.0, "slide": 20.0})
+    monkeypatch.setattr(bench, "load_state", lambda: {"wrist": 50.0, "slide": bench.HOVER_SLIDE})
     monkeypatch.setattr(bench, "swing", lambda *a: made.append("swing"))
     nav = Navigator(None, None, None, None, FakeJaws(made))
     monkeypatch.setattr(nav, "drive", lambda joint, angle, seconds: made.append((joint, angle)))
@@ -266,6 +266,50 @@ def test_a_failed_grip_isnt_counted_as_holding(monkeypatch):
     with pytest.raises(resistor_nav.GripperError):
         nav.perform(("pick", (0.0, -130.0), 45.0))
     assert not nav.holding
+
+
+def jaws_nav(monkeypatch, slide=BIN_SLIDE, path=((55.0, 115.0), (-50.0, 100.0))):
+    """A Navigator with faked arm and jaws, holding nothing: it and the moves it makes (jaws included)."""
+    made = []
+    bench = resistor_nav.bench
+    monkeypatch.setattr(resistor_nav, "plan_jaws", lambda *a, **k: (-50.0, 100.0, 40.0))
+    monkeypatch.setattr(resistor_nav, "pots_for", lambda *a: (20.0, 100.0))
+    monkeypatch.setattr(resistor_nav, "bin_path", lambda *a: list(path))
+    monkeypatch.setattr(resistor_nav.time, "sleep", lambda s: None)
+    monkeypatch.setattr(bench, "swing_refusal", lambda *a, **k: None)
+    monkeypatch.setattr(bench, "passes_bin", lambda *a: False)
+    monkeypatch.setattr(bench, "read_joints", lambda *a: (20.0, 100.0))
+    monkeypatch.setattr(bench, "load_state", lambda: {"wrist": 8.0, "slide": slide})
+    monkeypatch.setattr(bench, "swing", lambda *a: made.append("swing"))
+    monkeypatch.setattr(bench, "glide", lambda *a: made.append("glide"))
+    monkeypatch.setattr(bench, "park", lambda *a: made.append("park"))
+
+    class Arm:
+        arm = None
+
+    nav = Navigator(None, Arm(), None, None, FakeJaws(made))
+    monkeypatch.setattr(nav, "drive", lambda joint, angle, seconds: made.append((joint, angle)))
+    return nav, made
+
+
+def test_the_jaws_sweep_to_a_resistor_closed_and_open_on_arrival(monkeypatch):
+    nav, made = jaws_nav(monkeypatch)
+    nav.go((0.0, -130.0), 45.0)
+    assert made == ["close", ("slide", resistor_nav.bench.HOVER_SLIDE), "swing", "glide", "open"]
+
+
+@pytest.mark.parametrize("command", [("park",), ("move_to", -77.0, 110.0), ("to_bin", "B1", SLOT)])
+def test_every_other_sweep_starts_with_the_jaws_closed(monkeypatch, command):
+    nav, made = jaws_nav(monkeypatch)
+    getattr(nav, command[0])(*command[1:])
+    assert made[0] == "close"
+    assert "open" not in made
+
+
+def test_holding_a_resistor_the_jaws_arent_closed_again_on_the_way_to_a_bin(monkeypatch):
+    nav, made = holding_nav(monkeypatch)
+    nav.perform(("to_bin", "B1", SLOT))
+    assert "close" not in made
 
 
 def test_no_gripper_means_no_pick(monkeypatch):

@@ -268,7 +268,7 @@ def write_labels(session):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="python -m robot_offline.tools.collect_bands", description=__doc__.split("\n")[0])
     p.add_argument("--session", default=date.today().isoformat(), help="folder under data/bands/kit (today's date)")
-    p.add_argument("--seg-weights", type=Path, default=config.ROOT / "models" / "seg_grey_v2" / "best.pt")
+    p.add_argument("--seg-weights", type=Path, default=config.SEG_WEIGHTS)
     p.add_argument("--tagger", type=Path, default=config.ROOT / "models" / "resistor_tag_v1" / "resistor_tag.pt")
     p.add_argument("--no-closeups", action="store_true", help="skip the per-resistor close-ups (about 3.5 s each)")
     p.add_argument("--captures", type=int, help="placements per value (configs/resistor_kit.toml)")
@@ -321,7 +321,8 @@ def main(argv=None):
 
     index = next((i for i in range(len(values)) if len(done_captures(session / folder_name(values[i], markings[i]))) < per_value),
                  len(values))
-    message, result, preview, next_preview, shown = "", None, None, 0.0, None
+    message, result, next_preview, shown = "", None, 0.0, None
+    preview_polys, preview_count = [], 0
     focuser = None                  # the focus check, made at the first capture (pre/focus.py)
     try:
         while True:
@@ -338,18 +339,20 @@ def main(argv=None):
                 f = folder(index)
                 done = len(done_captures(f))
                 now = time.perf_counter()
-                if cal is not None and not tracker.searching and now >= next_preview and result is None:
+                live = None             # the plate top-down from this frame, once it is fitted: always live
+                if cal is not None and not tracker.searching and result is None:
                     plain = rectify.rectify(frame, cal)
                     mv, _ = rectify.model_input(frame, cal, plain)
-                    t = tiling.tiles((a["x0"], a["y0"], a["width"], a["height"]), (mv.shape[1], mv.shape[0]),
-                                     tc["size"], tc["overlap"])
-                    polys, _ = tiling.predict_frame(seg, mv, t, conf=CONF, grey=grey)
-                    preview = mv.copy()
-                    for poly in polys:
-                        cv2.polylines(preview, [np.round(poly).astype(np.int32)], True, (0, 200, 0), 2, cv2.LINE_AA)
-                    preview_count = len(polys)
-                    next_preview = time.perf_counter() + PREVIEW_SECONDS
-                image = result if result is not None else preview if preview is not None else frame
+                    if now >= next_preview:     # segmentation every PREVIEW_SECONDS, its outlines on every frame
+                        t = tiling.tiles((a["x0"], a["y0"], a["width"], a["height"]), (mv.shape[1], mv.shape[0]),
+                                         tc["size"], tc["overlap"])
+                        preview_polys, _ = tiling.predict_frame(seg, mv, t, conf=CONF, grey=grey)
+                        preview_count = len(preview_polys)
+                        next_preview = time.perf_counter() + PREVIEW_SECONDS
+                    live = mv.copy()
+                    for poly in preview_polys:
+                        cv2.polylines(live, [np.round(poly).astype(np.int32)], True, (0, 200, 0), 2, cv2.LINE_AA)
+                image = result if result is not None else live if live is not None else frame
                 b4, b5 = bands_of(values[index], 4), bands_of(values[index], 5)
                 if values[index] is None:
                     bands = "not a resistor: for the resistor tag and to check the reader holds back"
@@ -370,7 +373,7 @@ def main(argv=None):
                          "found by it.", "muted"), ("", "gap")]
                 if result is not None:
                     rows.append((message, "good" if "saved" in message else "alert"))
-                elif preview is not None:
+                elif live is not None:
                     rows.append((f"Segmentation sees {preview_count} bodies", "big"))
                 elif cal is None or tracker.searching:
                     rows.append(("Finding the plate ... if it takes long, move any lead off the centre cross "
@@ -389,9 +392,9 @@ def main(argv=None):
             if key in (ord("q"), 27) or cv2.getWindowProperty(WINDOW, cv2.WND_PROP_VISIBLE) < 1:
                 break
             if key == ord("n") and index < len(values):
-                index, message, result, preview = index + 1, "", None, None
+                index, message, result, next_preview = index + 1, "", None, 0.0
             elif key == ord("p") and index > 0:
-                index, message, result, preview = index - 1, "", None, None
+                index, message, result, next_preview = index - 1, "", None, 0.0
             elif key == ord("c"):
                 tracker.restart()
                 message = "looking for the plate again"

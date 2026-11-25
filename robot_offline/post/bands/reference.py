@@ -27,7 +27,7 @@ from robot_offline import config
 from robot_offline.inf import tiling
 from robot_offline.pre import plate_search, rectify
 
-DEFAULT_WEIGHTS = config.ROOT / "models" / "seg_grey_v2" / "best.pt"
+DEFAULT_WEIGHTS = config.SEG_WEIGHTS
 PREVIEW_SCALE = 0.6         # of the live detection view's size
 
 

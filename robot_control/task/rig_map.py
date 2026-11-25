@@ -36,7 +36,7 @@ ARM, ARM_EDGE, JAWS, BODY = (70, 205, 240), (20, 60, 90), (40, 40, 40), (200, 12
 LINK_WIDTH_MM = (26.0, 18.0)                # how wide each link is drawn
 PAD_MM = (3.0, 9.0)                         # a jaw's pad: thick (along the closing line), long
 RESISTOR_MM = (6.3, 2.4)                    # a 1/4 W body
-SLIDE_GAUGE = (-50.0, 63.0)                 # the slide's range, fully up to the plate (firmware deg)
+SLIDE_GAUGE = (-50.0, 61.0)                 # the slide's range, fully up to the plate (firmware deg; 59 until 2026-11-23)
 TITLE_H = 30
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 

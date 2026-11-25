@@ -51,7 +51,7 @@ def test_a_planned_pose_puts_the_tip_on_the_target_face_on():
 
 
 def test_the_crosshair_plans_near_where_it_was_measured_face_on():
-    assert plan_point((-0.48, -130.37), LENS, KIN, RIG)[2] == pytest.approx(74.0, abs=5.0)
+    assert plan_point((-0.48, -130.37), LENS, KIN, RIG)[2] == pytest.approx(-15.0, abs=5.0)   # gripper v5, by eye 2026-11-18 (v4: 74)
 
 
 def test_the_axis_comes_back_from_the_tip():

@@ -1,0 +1,39 @@
+{
+  "weights": "best.pt",
+  "start_weights": "models/seg_grey_v2/best.pt",
+  "tile_size": 1024,
+  "tile_overlap": 128,
+  "rules_version": 1,
+  "classes": [
+    "resistor_body"
+  ],
+  "train_args": {
+    "imgsz": 1024,
+    "epochs": 10,
+    "batch": 4,
+    "workers": 2,
+    "device": 0,
+    "patience": 10,
+    "name": "seg_grey_v2_ft_20261123",
+    "degrees": 180,
+    "fliplr": 0.5,
+    "flipud": 0.5,
+    "scale": 0.4,
+    "hsv_h": 0.0,
+    "hsv_s": 0.0,
+    "hsv_v": 0.4,
+    "mosaic": 1.0,
+    "optimizer": "AdamW",
+    "lr0": 0.0002,
+    "warmup_epochs": 0.5,
+    "close_mosaic": 2,
+    "model": "models/seg_grey_v2/best.pt"
+  },
+  "input": "grey",
+  "training_data": {
+    "train": "synth_v2 (800 frames) + real session 2026-11-23_a frames 0001-0015, the real tiles listed 13 times (about 1 in 5)",
+    "val": "synth_v2_val (100) + 2026-11-23_a frames 0016-0020",
+    "real_labels": "seg_grey_v2's own outlines (both ways round, checked on a contact sheet) plus 2 bodies it missed, outlined by colour; 6 per frame, 120 in all"
+  },
+  "note": "Fine-tuned 2026-11-23 from seg_grey_v2 at lr0 0.0002 (AdamW) for 10 epochs. classes and rules_version are seg_grey_v2's: the run's own handoff.json recorded dataset.toml's ['object'] and 2, which the export didn't use."
+}

@@ -14,7 +14,8 @@ a still plate:
 2. The picture: closeup.SETTLE more frames read and dropped (anything buffered from before the arm parked is
    gone by then), then AVERAGE_FRAMES averaged (closeup.mean_frame), the exposure held still. Averaging only
    works on a still scene: anything moving in view (the arm, a hand) blurs.
-3. The bodies: the segmentation model on the averaged picture (tiling.predict_frame), down to
+3. The bodies: the segmentation model on the averaged picture, as it is and turned a quarter turn, each body's
+   two scores averaged (vision.orientations: the model is unsure of one diagonal), down to
    body_memory.FLOOR so a body already known still counts when its score dips; each one's centroid and long
    axis in scene mm (vision.bodies); followed from look to look by BodyMemory.
 
@@ -54,7 +55,6 @@ from dataclasses import dataclass
 
 import numpy as np
 from robot_offline import config as offline_config
-from robot_offline.inf import tiling
 from robot_offline.post import skeleton
 from robot_offline.post.bands import closeup, crops, learned, values
 from robot_offline.pre import plate_search, rectify
@@ -68,6 +68,8 @@ from robot_control.config import RigSettings, VisionSettings, WorkspaceSettings
 from robot_control.vision.body_memory import FLOOR, BodyMemory
 from robot_control.vision.bodies import body_direction, centroid_mm
 from robot_control.vision.detector import Detector, camera_mm
+from robot_control.vision.orientations import predict_two_ways
+from robot_control.vision.shared_camera import SharedCamera
 from robot_control.world import PlateView, Resistor
 
 AVERAGE_FRAMES = 8      # frames averaged into each look's picture, as robot_offline's read_plate and collect_bands
@@ -135,9 +137,9 @@ class Eyes:
             from robot_offline.pre.camera import open_camera
             print("Opening the camera (a few seconds while exposure and white balance settle)...", flush=True)
             cap = open_camera(camera)
-        self.cap = cap
+        self.cap = SharedCamera(cap)    # read by a window's live view too (live)
         # Found once and held: the rig doesn't move during a run, and the arm would spoil refits.
-        self.tracker = plate_search.Tracker(cap, rectify.Settings.from_config(), camera=camera,
+        self.tracker = plate_search.Tracker(self.cap, rectify.Settings.from_config(), camera=camera,
                                             refit_seconds=float("inf"), level=learned.READING_LEVEL)
 
     def look(self, sharp=False):
@@ -191,6 +193,24 @@ class Eyes:
         frame, cal = self._picture()
         return find_tip(frame, cal, near_mm, height_mm)
 
+    def take_tip_reference(self):
+        """A picture of the plate as it is now, the arm away, for find_tip_and_axis to compare its pictures with
+        (vision/jaws.py: the gripper found as what changed). Held until taken again."""
+        self.tip_reference = self._picture()[0]
+
+    def find_tip_and_axis(self, near_mm, height_mm=0.0):
+        """find_tip's tip, and the wrist's axis as the camera measures it, scene mm: for gripper v5 the jaws'
+        centre from their bodies' corners (vision/jaws.py), which needs no wrist model; for v4, None (the
+        caller takes the model's tip offset off the tip). Raises tip.TipNotFound or EyesError."""
+        from robot_control.vision.tip import configured_finder, find_tip
+        frame, cal = self._picture()
+        self.last_tip_picture = (frame, cal)        # for the aim check's record, found or not
+        if configured_finder() == "jaws":
+            from robot_control.vision.jaws import find_jaws
+            found = find_jaws(frame, cal, near_mm, height_mm, reference=getattr(self, "tip_reference", None))
+            return found.tip_mm, found.centre_mm
+        return find_tip(frame, cal, near_mm, height_mm), None
+
     def lens_mm(self):
         """Where the plate's fit puts the camera, scene mm (finding the plate first if it hasn't been)."""
         cal = self.tracker.cal if self.tracker.cal is not None else self._picture()[1]
@@ -198,6 +218,15 @@ class Eyes:
 
     def plate_status(self):
         return self.tracker.status()
+
+    def live(self):
+        """(the newest camera frame or None, the plate's held fit or None): for a window's live view, from any
+        thread. Reads a frame only while nothing else is reading the camera (SharedCamera.newest), and never
+        looks for the plate or moves the exposure: the plate is found by the run's own pictures, with the arm
+        parked, as before."""
+        newest = getattr(self.cap, "newest", None)
+        frame = newest() if newest is not None else None
+        return frame, self.tracker.cal
 
     def close(self):
         self.tracker.close()
@@ -312,8 +341,8 @@ class Eyes:
         self.focus_checked_at = time.monotonic()
 
     def _find_bodies(self, frame, cal):
-        """(outlines in rectified px, scores) from the segmentation model, down to FLOOR."""
+        """(outlines in rectified px, scores) from the segmentation model, down to FLOOR: the frame seen two ways
+        round, each body's scores averaged (vision.orientations)."""
         d = self.detector
         model_view, _ = rectify.model_input(frame, cal)
-        tiles = tiling.tiles(d.work_area, (model_view.shape[1], model_view.shape[0]), d.tile_size, d.tile_overlap)
-        return tiling.predict_frame(d.model, model_view, tiles, conf=FLOOR, grey=d.grey)
+        return predict_two_ways(d.model, model_view, d.work_area, d.tile_size, d.tile_overlap, conf=FLOOR, grey=d.grey)

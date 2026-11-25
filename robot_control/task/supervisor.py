@@ -6,6 +6,7 @@ One cycle:
     judge     was the last pick a success? (its spot is empty now)
     plan      which resistor next, and which bin it goes in
     pick      over it, down, grip, up
+    measure   (with the ohmmeter) its leads pressed on the meter's pads, still held, and its bin chosen by that reading
     drop      over its bin, down, open, up
     park      out of the camera's view, ready to look again
 
@@ -24,7 +25,9 @@ and PickMemory last as long as it does, so a run stopped and started again carri
 
 import threading
 
+from robot_control.hardware.ohmmeter import OhmmeterError
 from robot_control.motion.arm import ArmError
+from robot_offline.post.bands.learned import ohms_text
 from robot_control.planning.memory import Attempt
 from robot_control.vision.occlusion import arm_hides_plate
 from robot_control.task.run_log import describe_reading
@@ -41,10 +44,14 @@ LOOK_POSE = (56.3, 116.4)
 
 
 class Supervisor:
-    def __init__(self, eyes, arm, planner, log, window=None):
+    def __init__(self, eyes, arm, planner, log, window=None, ohmmeter=None):
         """eyes: vision.Eyes. arm: motion.Arm, or None to look and plan only. planner: planning.Planner.
-        log: task.RunLog. window: task.RunWindow, or None to show nothing."""
+        log: task.RunLog. window: task.RunWindow, or None to show nothing. ohmmeter: hardware.ohmmeter's
+        SerialOhmmeter (or FakeOhmmeter), needed when the planner measures, else None."""
+        if planner.measure and ohmmeter is None and arm is not None:
+            raise ValueError("the planner measures resistors, but there is no ohmmeter")
         self.eyes, self.arm, self.planner, self.log = eyes, arm, planner, log
+        self.ohmmeter = ohmmeter
         self.window = window or QuietWindow()
         self.fails_in_a_row = 0
         self.stop_asked = threading.Event()     # set from the window's thread; read between picks
@@ -78,7 +85,7 @@ class Supervisor:
                 ended = f"stopped after {MAX_CYCLES} cycles"
             if not self.arm.holding:
                 self.arm.park()             # ready for the next START or CALIBRATE
-        except (ArmError, EyesError) as why:
+        except (ArmError, EyesError, OhmmeterError) as why:
             ended = f"STOPPED: {why}"
         self.log.event(0, "end", why=ended, sorted=len(self.memory.sorted), bins=self.bins.assigned)
         self.update_trays()
@@ -134,33 +141,87 @@ class Supervisor:
 
     def pick_and_drop(self, n, pick):
         r = pick.resistor
+        heading = pick.bin_id or "the ohmmeter"
         self.update_trays(target=pick.bin_id)
-        self.say(f"picking #{r.number}, read {describe_reading(r)}, for {pick.bin_id}")
+        self.say(f"picking #{r.number}, read {describe_reading(r)}, for {heading}"
+                 + (" (measured first)" if pick.measure and pick.bin_id else ""))
         self.log.event(n, "pick", resistor=r.number, body=r.body_id, ohm=r.value_ohm, confidence=round(r.confidence, 3),
-                       colours=" ".join(r.colours), closeup=r.closeup, bin=pick.bin_id,
+                       colours=" ".join(r.colours), closeup=r.closeup, bin=pick.bin_id, measure=pick.measure,
                        x_mm=round(r.centre_mm[0], 1), y_mm=round(r.centre_mm[1], 1))
+        value, bin_id = (None, self.bins.unclassified) if pick.bin_id is None else (r.value_ohm, pick.bin_id)
         if not self.arm.pick(r):
             self.fails_in_a_row += 1
             self.memory.give_up(r.centre_mm, f"the arm couldn't pick it ({self.arm.message})")
             self.log.event(n, "pick refused", why=self.arm.message)
             if self.arm.holding:            # it stopped after the jaws closed: whatever they hold must go
-                self.drop(n, pick)
+                self.drop(n, bin_id, value)
             return
-        self.memory.attempted(Attempt(r.centre_mm, r.value_ohm, pick.bin_id))
+        meter_failed = None
+        if pick.measure:
+            try:
+                value, bin_id = self.measure(n, r)
+            except OhmmeterError as why:    # drop what it holds in the reject bin first, then stop the run
+                self.log.event(n, "measure failed", why=str(why))
+                value, bin_id, meter_failed = None, self.bins.unclassified, why
+        self.memory.attempted(Attempt(r.centre_mm, value, bin_id))
         self.eyes.picked(r.centre_mm)       # still a body next look if anything is found there: a failed pick
-        self.drop(n, pick)
+        self.drop(n, bin_id, value)
+        if meter_failed is not None:
+            raise OhmmeterError(f"the ohmmeter stopped answering: {meter_failed}")
 
-    def drop(self, n, pick):
-        """Into the pick's bin, which its value keeps from then on. Raises ArmError if it can't let go there."""
-        self.say(f"taking it to {pick.bin_id}")
+    def measure(self, n, r):
+        """The resistor in the jaws, read by the ohmmeter: carried to its station (the meter's settings.station),
+        its leads pressed on the pads without letting go, measured, lifted. Returns (value, bin): its E24 value
+        and the bin that value goes in, or (None, the reject bin) when the meter can't place it or the arm
+        couldn't get there. Raises OhmmeterError if the meter doesn't answer."""
+        reject = self.bins.unclassified
+        station = getattr(getattr(self.ohmmeter, "settings", None), "station", None)
+        self.say(f"measuring #{r.number}")
+        if station is not None and not self.arm.press_on_meter(station):
+            self.log.event(n, "measured", resistor=r.number, ohms=None, samples=[], nominal=None, read=r.value_ohm,
+                           agrees=None, bin=reject, why=f"couldn't reach the ohmmeter: {self.arm.message}")
+            self.say(f"couldn't reach the ohmmeter ({self.arm.message}): #{r.number} into {reject}")
+            return None, reject
+        try:
+            m = self.ohmmeter.measure()
+        finally:
+            if station is not None:
+                self.arm.lift()
+        value, why = m.nominal_ohm, m.why
+        bin_id = self.bins.bin_for(value) if value is not None else reject
+        if value is not None and bin_id == reject:
+            why = f"{ohms_text(value)} is outside the sorter's range"
+        elif bin_id is None:
+            why, bin_id = f"no bin free for {ohms_text(value)}", reject
+        if bin_id == reject:
+            value = None
+        read = r.value_ohm
+        agrees = None if read is None or m.nominal_ohm is None else read == m.nominal_ohm
+        self.log.event(n, "measured", resistor=r.number, ohms=None if m.ohms is None else round(m.ohms, 2),
+                       samples=[round(v, 2) for v in m.samples], nominal=m.nominal_ohm, read=read, agrees=agrees,
+                       bin=bin_id, why=why)
+        if value is None:
+            self.say(f"the ohmmeter can't place #{r.number} ({why}): into {bin_id}")
+        elif agrees is False:
+            self.say(f"the ohmmeter says {ohms_text(value)} where the bands said {ohms_text(read)}: "
+                     f"going by the meter, into {bin_id}")
+        else:
+            self.say(f"measured {ohms_text(value)} ({m.ohms:.1f} ohm): into {bin_id}")
+        return value, bin_id
+
+    def drop(self, n, bin_id, value):
+        """Into bin_id; value (ohms) keeps that bin from then on, unless it is the unclassified bin. Raises
+        ArmError if it can't let go there."""
+        self.say(f"taking it to {bin_id}")
         for _ in range(DROP_TRIES):
-            if self.arm.drop(pick.bin_id):
-                self.bins.assign(pick.resistor.value_ohm)
-                self.log.event(n, "dropped", bin=pick.bin_id)
-                self.update_trays(target=pick.bin_id)
+            if self.arm.drop(bin_id):
+                if bin_id != self.bins.unclassified:
+                    self.bins.assign(value)
+                self.log.event(n, "dropped", bin=bin_id)
+                self.update_trays(target=bin_id)
                 return
             self.log.event(n, "drop failed", why=self.arm.message)
-        raise ArmError(f"holding a resistor it couldn't drop in {pick.bin_id}: {self.arm.message}")
+        raise ArmError(f"holding a resistor it couldn't drop in {bin_id}: {self.arm.message}")
 
     def read_values(self):
         """The start-of-run read (Eyes.read_values): every resistor's value, once, after a focus calibration.

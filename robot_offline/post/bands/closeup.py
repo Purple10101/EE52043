@@ -244,7 +244,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m robot_offline.post.bands.closeup")
     sub = parser.add_subparsers(dest="command", required=True)
     cal_p = sub.add_parser("calibrate", help="sweep focus over the bodies on the plate and fit focus to distance")
-    cal_p.add_argument("--weights", default=str(config.ROOT / "models" / "seg_grey_v2" / "best.pt"))
+    cal_p.add_argument("--weights", default=str(config.SEG_WEIGHTS))
     cal_p.add_argument("--save", action="store_true", help="add the points to configs/camera.toml [closeup]")
     cal_p.add_argument("--fresh", action="store_true", help="with --save: replace the points rather than add to them")
     args = parser.parse_args(argv)

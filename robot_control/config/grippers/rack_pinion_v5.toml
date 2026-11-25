@@ -1,0 +1,25 @@
+# Rack and pinion gripper v5, rev 3 (Robot Resources/gripper/v5). Numbers from the build scripts (v5_a_build,
+# v5_e_wide_points, v5_g_mount) and checked against the STEP's vertices (2026-11-18).
+# Gripper frame: origin on the Z shaft's axis, x along the line the jaws close on, y across it, z DOWN from the
+# old arm face (the arm face itself is at z -17 since rev 3, the socket floor at z -12, the fingertips at z 55).
+
+tool_offset_mm = [0.0, 0.0]   # mounts centred on the Z shaft: socket and closed tips both on its axis
+tip_below_shaft_mm = 67.0     # fingertips below the shaft's bottom face (socket floor z -12, tips z 55); v4 was 64
+symmetric = true
+# Robot-frame direction the jaws close along when the tool angle sent to the firmware is 0.
+# Placeholder: measure on the arm.
+jaw_axis_at_zero_deg = 0.0
+tip_finder = "jaws"          # robot_control/vision/jaws.py: the corners and points (the gripper is blue-grey)
+
+# Features the camera can find (all closed; each jaw moves STROKE outward along x when opening, symmetrically).
+[features]
+stroke_mm = 6.0               # per jaw: opening 0..12 mm
+body_corner_x_mm = 16.0       # jaw bodies' bottom outer corners at x +/-16 (32 mm apart closed, 44 open)
+body_corner_y_mm = 6.0        # ... on both faces, y +/-6: the bodies and points are 12 mm deep, centred on the axis
+body_corner_above_tip_mm = 9.0  # ... at z 46, 9 mm above the fingertips (z 55)
+body_top_above_tip_mm = 25.6  # the jaw bodies span z 29.4..46; the base and cover above them are wider (x +/-19.5)
+# The point (each jaw): shoulder at x 5.25, z 46; chamfer to x 3.25 at z 48; straight to z 51; tapers to x 0.3 at z 55.
+# Between the two points a 1.5 mm slit (x +/-0.75) runs from z 46 to 51: they meet only over the last 4 mm.
+point_half_width_mm = 3.25
+point_end_half_width_mm = 0.3
+point_slit_half_width_mm = 0.75

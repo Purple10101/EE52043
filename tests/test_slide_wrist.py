@@ -198,13 +198,15 @@ def test_the_first_move_after_a_reset_must_be_to_zero():
 
 
 def test_later_moves_are_small_and_inside_the_safe_range():
-    assert refusal("slide", 60.0, -15.0) is None
-    assert "step" in refusal("slide", 60.0, -20.0)                # 80 deg down at once
+    assert refusal("slide", 59.0, -15.0) is None
+    assert "step" in refusal("slide", 59.0, -20.0)                # 79 deg down at once
     assert refusal("slide", -50.0, 63.0) is None                  # up: any distance
     assert "step" in refusal("wrist", -80.0, 110.0)                # the wrist keeps its step both ways
     assert refusal("wrist", 100.0, -60.0) is None
     assert "step" in refusal("wrist", 110.0, -80.0)
-    assert "safe range" in refusal("slide", 64.0, 62.0)
+    bottom = slide_wrist.SAFE["slide"][1]
+    assert refusal("slide", bottom, bottom - 2.0) is None
+    assert "safe range" in refusal("slide", bottom + 1.0, bottom - 2.0)
 
 
 def test_arm_moves_stay_in_range_and_clear_of_the_tower():

@@ -45,8 +45,9 @@ import resistor_nav  # noqa: E402
 import slide_wrist as bench  # noqa: E402
 from robot_offline.post.bands.values import SORTER_OHM  # noqa: E402
 
-from robot_control.config import ArmSettings  # noqa: E402
+from robot_control.config import ArmSettings, OhmmeterSettings  # noqa: E402
 from robot_control.gripper import Gripper, GripperError  # noqa: E402
+from robot_control.hardware import ohmmeter as ohmmeters  # noqa: E402
 from robot_control.hardware.arm_monitor import ArmMonitor  # noqa: E402
 from robot_control.kinematics.arm import Kinematics  # noqa: E402
 from robot_control.motion.arm import Arm  # noqa: E402
@@ -99,24 +100,49 @@ def build_arm(port, slots, camera_calibration=True, need_gripper=True):
     return Arm(navigator, slots, bench), monitor
 
 
-def build(port=None, look_only=False, closeups=True, buttons=None, camera_calibration=True, unclassified_bin=None):
+def build_ohmmeter(look_only, use_ohmmeter):
+    """(OhmmeterSettings or None, the meter or None): the ohmmeter backup as config/ohmmeter.toml sets it up.
+    None for both when it is off there or use_ohmmeter is False; the meter None with look_only (nothing is
+    picked, so nothing is measured, but the plan still shows what would be)."""
+    settings = OhmmeterSettings.from_config()
+    if not (settings.enabled and use_ohmmeter):
+        return None, None
+    if look_only:
+        return settings, None
+    try:
+        meter = ohmmeters.from_config(settings)
+    except ohmmeters.OhmmeterError as why:
+        sys.exit(f"The ohmmeter isn't ready ({why}): plug it in, or run with --no-ohmmeter.")
+    st = settings.station
+    print(f"ohmmeter on: measuring {settings.measure} resistors on its station at ({st.centre_mm[0]:.1f}, "
+          f"{st.centre_mm[1]:.1f}) mm, slide {st.measure_slide:g}; rejects into {settings.reject_bin}", flush=True)
+    return settings, meter
+
+
+def build(port=None, look_only=False, closeups=True, buttons=None, camera_calibration=True, unclassified_bin=None,
+          use_ohmmeter=True):
     """(Supervisor, RunWindow, Eyes): every part of the sorting program, built and joined up. Both this
     window and sort_resistors_auto.py's use it. buttons: the window's button bar (None: this window's).
     unclassified_bin: a bin id for resistors whose value couldn't be read or is outside the sorter's range,
-    or None to leave them on the plate."""
+    or None to leave them on the plate. With the ohmmeter on (config/ohmmeter.toml, unless use_ohmmeter is
+    False), those resistors are measured instead, and the ones it can't place go in unclassified_bin, or in
+    ohmmeter.toml's reject_bin when none is given."""
     slots = resistor_nav.load_bins()
+    meter_settings, meter = build_ohmmeter(look_only, use_ohmmeter)
+    if meter_settings is not None and unclassified_bin is None:
+        unclassified_bin = meter_settings.reject_bin
     try:
         bins = BinPlan.from_slots(slots, SORTER_OHM, unclassified=unclassified_bin)
+        planner = Planner(bins, PickMemory(), meter_settings.measure if meter_settings else None)
     except ValueError as why:
         sys.exit(str(why))
-    planner = Planner(bins, PickMemory())
     arm, monitor = (None, None) if look_only else build_arm(port, slots, camera_calibration)
     eyes = Eyes(closeups=closeups)
     log = RunLog()
     print(f"Logging to {log.folder}", flush=True)
     extra = {} if buttons is None else {"buttons": buttons}
-    window = RunWindow(rig_map=RigMap.load(slots), monitor=monitor, **extra)
-    supervisor = Supervisor(eyes, arm, planner, log, window)
+    window = RunWindow(rig_map=RigMap.load(slots), monitor=monitor, live=eyes.live, **extra)
+    supervisor = Supervisor(eyes, arm, planner, log, window, ohmmeter=meter)
     eyes.say = supervisor.say           # close-ups take a while: say so in the window
     return supervisor, window, eyes
 
@@ -141,9 +167,11 @@ def main():
     p.add_argument("--cad", action="store_true",
                    help="aim by the arm's CAD geometry (and pick_calibration.json if there is one) instead of "
                         "camera_calibration.json (the default)")
+    p.add_argument("--no-ohmmeter", action="store_true",
+                   help="don't use the ohmmeter even if config/ohmmeter.toml turns it on")
     args = p.parse_args()
     supervisor, window, eyes = build(args.port, args.look_only, not args.no_closeups,
-                                     camera_calibration=not args.cad)
+                                     camera_calibration=not args.cad, use_ohmmeter=not args.no_ohmmeter)
     run_window(SortingApp(supervisor, window), eyes, window)
 
 

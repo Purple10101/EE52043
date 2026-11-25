@@ -1,0 +1,64 @@
+{
+  "px_per_mm": 3.0,
+  "x_left_mm": -200.0,
+  "y_top_mm": 95.0,
+  "source": "the digital twin's meshes, scripts/twin/render_top_view.py, tray A turned as on the rig",
+  "slots": {
+    "A1": {
+      "centre_mm": [
+        -92.5,
+        25.0
+      ],
+      "long_axis_deg": -90.0
+    },
+    "A2": {
+      "centre_mm": [
+        -117.5,
+        25.0
+      ],
+      "long_axis_deg": -90.0
+    },
+    "A3": {
+      "centre_mm": [
+        -142.5,
+        25.0
+      ],
+      "long_axis_deg": -90.0
+    },
+    "A4": {
+      "centre_mm": [
+        -167.5,
+        25.0
+      ],
+      "long_axis_deg": -90.0
+    },
+    "B1": {
+      "centre_mm": [
+        -130.0,
+        -42.5
+      ],
+      "long_axis_deg": 0.0
+    },
+    "B2": {
+      "centre_mm": [
+        -130.0,
+        -67.5
+      ],
+      "long_axis_deg": 0.0
+    },
+    "B3": {
+      "centre_mm": [
+        -130.0,
+        -92.5
+      ],
+      "long_axis_deg": 0.0
+    },
+    "B4": {
+      "centre_mm": [
+        -130.0,
+        -117.5
+      ],
+      "long_axis_deg": 0.0
+    }
+  }
+}

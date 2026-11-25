@@ -84,11 +84,24 @@ full search (about 16 s on the rig), each later one about 3.5 s. If the cross is
 stands in. Close-ups use the check's offset, so START needs no focus sweep of its own. With the check, segmentation
 found 8 of 8 kit parts against 5 of 8 at the old fixed focus. Each look's focus state is in the run's `events.csv`.
 
-**"Measure"** marks a resistor with no trusted value, for the ohmmeter once there is one (until then it stays on
-the plate). That covers three cases:
+**"Measure"** marks a resistor with no trusted value, for the ohmmeter. That covers three cases:
 - unsure at the read (under 0.7);
 - knocked since the read;
 - not there at the read: missed by segmentation, or uncovered later.
+
+**The ohmmeter backup** (`robot_control/config/ohmmeter.toml`, **off** until the meter arrives). With it on, a
+"measure" resistor is picked and measured in the jaws, and its reading decides the bin. The reading is the
+median of a few samples, rounded to the nearest E24 value. If the meter can't place a resistor, it goes in the
+reject bin (`reject_bin`, B4, or `--unclassified-bin`). That covers an open circuit (nothing in the jaws), an
+unsteady reading, a value off E24 or outside 10 ohm to 10 kohm, and a value with no bin left. `measure = "all"`
+measures every pick, so the meter also catches confident misreads. If the meter stops answering, the run drops
+what it holds in the reject bin and stops. `--no-ohmmeter` ignores it. With it off, "measure" resistors stay on
+the plate (or go in `--unclassified-bin`).
+
+The driver is a stub (`robot_control/hardware/ohmmeter.py`): the query, baud and reply format are placeholders.
+To bring the meter up: `python scripts\ohmmeter_check.py --list` (its port), `--raw` (what it sends; fix
+`query` and `parse_reply` to match), then plain (readings of a known resistor). Then set `enabled = true`. Only
+measuring in the jaws is built; a fixed measuring station would need its own moves (`Supervisor.measure`).
 
 A resistor seen before but missing from a look gets a dashed "missed?" ring, and the run looks again rather than
 end. A pick the jaws missed is followed, and picked again.
@@ -327,7 +340,11 @@ prints this line with the file's name filled in):
 .venv\Scripts\python scripts\tip_view.py --snapshot --lock --calibration logs\tips\plate_<time>_rectify.json
 ```
 
-It holds the camera and finds the tip by the closed jaws' V. The steps below close the jaws themselves.
+It holds the camera and finds the closed jaws (gripper v5: the jaw bodies' two bottom corners and the two
+points, `robot_control/vision/jaws.py`; the gripper config's `tip_finder` chooses). The steps below close the
+jaws themselves and turn them square to the plate (closing along its y edges); the camera checks that and turns
+the wrist again if they are more than 3 deg off. It also measures the jaws' centre, the wrist's axis, from the
+corners, which the fit uses as it is.
 
 **4. Check the arm against the plate.** Clear the middle of the plate (the tip comes down almost onto
 it, within 25 mm of the crosshair), then:
@@ -350,9 +367,12 @@ the joints aren't landing (redo 1). If "calibration alone" is above about 1.5 mm
 ```
 
 `run` visits 12 points round the plate and records where the camera saw the tip at each, against the
-potentiometers (a point it can't see is skipped). `fit` prints how well the joints' fit matches them, and
-how well each point is predicted when left out. Good: about 1.5 mm rms, worst under 2.5 for both. `--save`
-writes it to `robot_control/config/camera_calibration.json`, which everything that plans a move uses.
+potentiometers (a point it can't see is skipped; the raw frame of every point is kept in `logs/tips/`). `fit`
+prints how well the joints' fit matches them, and how well each point is predicted when left out. Good: about
+1.5 mm rms, worst under 2.5 for both. `--save` writes it to `robot_control/config/camera_calibration.json`,
+which everything that plans a move uses. With few pairs (under about 8), the joint fit's two extra numbers
+overfit: compare the two "left out" figures and use `--save --rigid` if the rigid one is lower (2026-11-18:
+5 pairs, rigid 1.04 mm left out against 1.57).
 Then `check` again, as in 4.
 
 **6. Finish.** Press `q` in the tip view to free the camera. `resistor_nav.py` finds the plate again
@@ -388,6 +408,12 @@ of the tower:
 .venv\Scripts\python scripts\slide_wrist.py park
 .venv\Scripts\python scripts\slide_wrist.py move wrist 0
 ```
+
+`start` also tells the firmware the elbow's play (4.5 deg, measured 2026-11-18), and in doing so checks that the
+Nucleo runs the PLAY firmware: the host's settings (no PID gains) are for it alone. If it stops with "isn't
+running the PLAY firmware", copy `firmware/build_play/servo_motion_controller.bin` onto the Nucleo's drive and
+start again. With any other firmware the base and elbow stop short of their targets (on 2026-11-18 the kit
+firmware was on the board and the elbow stopped 4 deg short of every downward move).
 
 After a power-off the slide and wrist are limp, so raise the slide fully by hand before `start`. Their
 first moves snap them to 0 at full speed. To redo `start` with the Nucleo still running, bring the slide
@@ -480,9 +506,11 @@ jaws went.
 | `RunWindow` | `task/window.py` | The window: status, plate, trays and buttons. It only draws; the run tells it what to show |
 | `SortingApp` | `task/app.py` | The buttons, each running one job (calibrate, look, run) in the background so the window stays alive |
 | `RunLog` | `task/run_log.py` | `logs/sort_runs/<time>/`: events.csv and a picture per look |
+| `SerialOhmmeter` | `hardware/ohmmeter.py` | The ohmmeter backup (a stub until the meter arrives): `measure()` reads what is in the jaws, rounded to E24. `FakeOhmmeter` stands in for it in tests |
 
 **What stays on the plate:**
-- a resistor to be measured: unsure at the read (under 0.7), moved since, or not there at the read;
+- a resistor to be measured: unsure at the read (under 0.7), moved since, or not there at the read (unless the
+  ohmmeter is on: then it is measured);
 - one read outside 10 ohm to 10 kohm;
 - one the arm missed twice or couldn't reach;
 - one whose value has no bin left once all 8 are taken.

@@ -44,7 +44,7 @@ with the body's length × width and yaw along its spine and its centroid in scen
 and shows all of these.
 
     python -m robot_offline.inf.live_detect
-    python -m robot_offline.inf.live_detect --weights models/seg_grey_v2/best.pt --fps 3 --conf 0.5
+    python -m robot_offline.inf.live_detect --weights models/seg_grey_v2_ft_20261123/best.pt --fps 3 --conf 0.5
     python -m robot_offline.inf.live_detect --last-fit       # the plate where it was last found, no search
 
 Keys:  q / Esc  quit      v  camera view / top-down view      m  top-down: what the model sees (masked)
@@ -377,7 +377,7 @@ def take_closeups(cap, cal, net, views, polygons, ids, tags, seg, grey, camera):
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m robot_offline.inf.live_detect",
                                      description="Run the model live on the camera and draw the body outlines.")
-    parser.add_argument("--weights", type=Path, default=config.ROOT / "models" / "seg_grey_v2" / "best.pt")
+    parser.add_argument("--weights", type=Path, default=config.SEG_WEIGHTS)
     parser.add_argument("--fps", type=float, default=3.0, help="detections per second (3)")
     parser.add_argument("--conf", type=float, default=0.5, help="confidence threshold (0.5)")
     parser.add_argument("--reader", type=Path, default=config.ROOT / "models" / "band_reader_kit_v1" / "band_reader.pt",
